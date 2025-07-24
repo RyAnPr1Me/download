@@ -20,6 +20,7 @@ class ThrottleGUI(tk.Tk):
         self.bandwidth_var = tk.StringVar()
         self.threads_var = tk.StringVar()
         self.mode_var = tk.StringVar(value='auto')
+        self.turbo_mode = False
         self.log_lines = []
         self.create_widgets()
         self.refresh_status()
@@ -51,10 +52,27 @@ class ThrottleGUI(tk.Tk):
         threads_entry = ttk.Entry(self.config_frame, textvariable=self.threads_var, width=5)
         threads_entry.grid(row=0, column=3, padx=5)
         ttk.Label(self.config_frame, text="Mode:").grid(row=0, column=4, sticky=tk.W)
-        mode_combo = ttk.Combobox(self.config_frame, textvariable=self.mode_var, values=["auto", "manual"], width=7, state="readonly")
+        mode_combo = ttk.Combobox(self.config_frame, textvariable=self.mode_var, values=["auto", "manual", "max_speed"], width=10, state="readonly")
         mode_combo.grid(row=0, column=5, padx=5)
         apply_btn = ttk.Button(self.config_frame, text="Apply", command=self.apply_config)
         apply_btn.grid(row=0, column=6, padx=10)
+        turbo_btn = ttk.Button(self.config_frame, text="Turbo Mode", command=self.toggle_turbo)
+        turbo_btn.grid(row=0, column=7, padx=10)
+    def toggle_turbo(self):
+        # Turbo mode: set max threads, max bandwidth, and max_speed mode
+        if not self.turbo_mode:
+            self.bandwidth_var.set(str(10**9))  # 1GB/s (effectively unlimited)
+            self.threads_var.set(str(16))  # High thread count for parallelism
+            self.mode_var.set('max_speed')
+            self.turbo_mode = True
+            self.append_log("Turbo Mode enabled: maximizing download speed!")
+        else:
+            self.bandwidth_var.set("")
+            self.threads_var.set("")
+            self.mode_var.set('auto')
+            self.turbo_mode = False
+            self.append_log("Turbo Mode disabled: normal operation.")
+        self.apply_config()
 
         columns = ("pid", "name", "bw", "percent", "score")
         self.tree = ttk.Treeview(self, columns=columns, show="headings")
@@ -87,104 +105,131 @@ class ThrottleGUI(tk.Tk):
     def periodic_refresh(self):
         # Only refresh if window is visible (not minimized)
         if self.state() != 'iconic':
-            self.refresh_status()
+            self.refresh_status(async_mode=True)
         self.after(2000, self.periodic_refresh)
     def apply_config(self):
         # Send config to the throttler service via authenticated IPC
         bw = self.bandwidth_var.get()
         threads = self.threads_var.get()
         mode = self.mode_var.get()
+        # Maximize threads and bandwidth if in turbo mode or max_speed
+        if mode == 'max_speed' or self.turbo_mode:
+            try:
+                import multiprocessing
+                cpu_count = multiprocessing.cpu_count()
+            except Exception:
+                cpu_count = 8
+            threads = str(max(16, cpu_count * 2))
+            bw = str(10**9)  # 1GB/s
         config = {"bandwidth": bw, "threads": threads, "mode": mode}
-        try:
-            with socket.create_connection((IPC_HOST, IPC_PORT), timeout=2) as s:
-                payload = {
-                    'token': IPC_AUTH_TOKEN,
-                    'event': 'GUI_SET_CONFIG',
-                    'data': config
-                }
-                msg = json.dumps(payload).encode()
-                s.sendall(msg)
-                resp = s.recv(1024)
-                if resp == b'OK':
-                    self.append_log(f"Config applied: {config}")
-                    messagebox.showinfo("Config", f"Applied config: {config}")
-                else:
-                    self.append_log(f"Failed to apply config: {config}")
-                    messagebox.showerror("Config", "Failed to apply config.")
-        except Exception as e:
-            self.append_log(f"Error applying config: {e}")
-            messagebox.showerror("Config", f"Error applying config: {e}")
+        def do_apply():
+            try:
+                with socket.create_connection((IPC_HOST, IPC_PORT), timeout=2) as s:
+                    payload = {
+                        'token': IPC_AUTH_TOKEN,
+                        'event': 'GUI_SET_CONFIG',
+                        'data': config
+                    }
+                    msg = json.dumps(payload).encode()
+                    s.sendall(msg)
+                    resp = s.recv(1024)
+                    if resp == b'OK':
+                        self.append_log(f"Config applied: {config}")
+                        if self.turbo_mode or mode == 'max_speed':
+                            messagebox.showinfo("Turbo Mode", "Turbo Mode enabled! Maximum download speed applied.")
+                        else:
+                            messagebox.showinfo("Config", f"Applied config: {config}")
+                    else:
+                        self.append_log(f"Failed to apply config: {config}")
+                        messagebox.showerror("Config", "Failed to apply config.")
+            except Exception as e:
+                self.append_log(f"Error applying config: {e}")
+                messagebox.showerror("Config", f"Error applying config: {e}")
+        self.after(1, do_apply)
     def append_log(self, msg):
         self.log_lines.append(msg)
+        if len(self.log_lines) > 100:
+            self.log_lines = self.log_lines[-100:]
         self.log_text.config(state="normal")
-        self.log_text.insert(tk.END, msg + "\n")
+        self.log_text.delete(1.0, tk.END)
+        self.log_text.insert(tk.END, "\n".join(self.log_lines) + "\n")
         self.log_text.see(tk.END)
         self.log_text.config(state="disabled")
 
-    def refresh_status(self):
-        try:
-            with socket.create_connection((IPC_HOST, IPC_PORT), timeout=2) as s:
-                payload = {
-                    'token': IPC_AUTH_TOKEN,
-                    'event': 'GUI',
-                    'data': None
-                }
-                msg = json.dumps(payload).encode()
-                s.sendall(msg)
-                data = s.recv(65536)
-                state = json.loads(data.decode())
-            self.status_label.config(text=f"Current bandwidth: {state.get('bandwidth', 'N/A')} bytes/s")
-            # System stats
-            sysload = state.get('system_load', {})
-            self.cpu_label.config(text=f"CPU: {sysload.get('cpu', 'N/A')}%")
-            self.ram_label.config(text=f"RAM: {sysload.get('ram', 'N/A')}%")
-            self.disk_label.config(text=f"Disk: {sysload.get('disk', 'N/A')}%")
-            self.net_label.config(text=f"Net: {sysload.get('net', 'N/A')}")
-            for row in self.tree.get_children():
-                self.tree.delete(row)
-            for d in state.get('downloads', []):
-                self.tree.insert('', 'end', values=(d['pid'], d['name'], d['bw'], d['bw_percent'], f"{d['score']:.2f}"))
-            # Fill priority entries
-            prio = state.get('priority_overrides', {})
-            for k, entry in self.prio_entries.items():
-                val = prio.get(k, "")
-                entry.delete(0, tk.END)
-                if val != "":
-                    entry.insert(0, str(val))
-            self.append_log(f"Status refreshed. Bandwidth: {state.get('bandwidth', 'N/A')} bytes/s")
-        except Exception as e:
-            self.append_log(f"Failed to get status: {e}")
-            messagebox.showerror("Error", f"Failed to get status: {e}")
+    def refresh_status(self, async_mode=False):
+        def do_refresh():
+            try:
+                with socket.create_connection((IPC_HOST, IPC_PORT), timeout=2) as s:
+                    payload = {
+                        'token': IPC_AUTH_TOKEN,
+                        'event': 'GUI',
+                        'data': None
+                    }
+                    msg = json.dumps(payload).encode()
+                    s.sendall(msg)
+                    data = s.recv(65536)
+                    state = json.loads(data.decode())
+                self.status_label.config(text=f"Current bandwidth: {state.get('bandwidth', 'N/A')} bytes/s")
+                # System stats
+                sysload = state.get('system_load', {})
+                self.cpu_label.config(text=f"CPU: {sysload.get('cpu', 'N/A')}%")
+                self.ram_label.config(text=f"RAM: {sysload.get('ram', 'N/A')}%")
+                self.disk_label.config(text=f"Disk: {sysload.get('disk', 'N/A')}%")
+                self.net_label.config(text=f"Net: {sysload.get('net', 'N/A')}")
+                # Only update tree if changed
+                current_rows = [self.tree.item(i)['values'] for i in self.tree.get_children()]
+                new_rows = [(d['pid'], d['name'], d['bw'], d['bw_percent'], f"{d['score']:.2f}") for d in state.get('downloads', [])]
+                if current_rows != new_rows:
+                    self.tree.delete(*self.tree.get_children())
+                    self.tree.insert('', 'end', *[{'values': vals} for vals in new_rows])
+                # Fill priority entries only if changed
+                prio = state.get('priority_overrides', {})
+                for k, entry in self.prio_entries.items():
+                    val = prio.get(k, "")
+                    if entry.get() != str(val):
+                        entry.delete(0, tk.END)
+                        if val != "":
+                            entry.insert(0, str(val))
+                self.append_log(f"Status refreshed. Bandwidth: {state.get('bandwidth', 'N/A')} bytes/s")
+            except Exception as e:
+                self.append_log(f"Failed to get status: {e}")
+                if not async_mode:
+                    messagebox.showerror("Error", f"Failed to get status: {e}")
+        if async_mode:
+            self.after(1, do_refresh)
+        else:
+            do_refresh()
 
     def set_priority(self):
-        try:
-            overrides = {}
-            for k, entry in self.prio_entries.items():
-                val = entry.get()
-                if val:
-                    try:
-                        ival = int(val)
-                        if 0 <= ival <= 10:
-                            overrides[k] = ival
-                    except ValueError:
-                        continue
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.connect((IPC_HOST, IPC_PORT))
-                payload = {
-                    'token': IPC_AUTH_TOKEN,
-                    'event': 'GUI_SET_PRIO',
-                    'data': overrides
-                }
-                msg = json.dumps(payload).encode()
-                s.sendall(msg)
-                resp = s.recv(1024)
-                if resp == b'OK':
-                    messagebox.showinfo("Success", "Priority overrides updated.")
-                    self.refresh_status()
-                else:
-                    messagebox.showerror("Error", "Failed to set priority overrides.")
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to set priority: {e}")
+        def do_set():
+            try:
+                overrides = {}
+                for k, entry in self.prio_entries.items():
+                    val = entry.get()
+                    if val:
+                        try:
+                            ival = int(val)
+                            if 0 <= ival <= 10:
+                                overrides[k] = ival
+                        except ValueError:
+                            continue
+                with socket.create_connection((IPC_HOST, IPC_PORT), timeout=2) as s:
+                    payload = {
+                        'token': IPC_AUTH_TOKEN,
+                        'event': 'GUI_SET_PRIO',
+                        'data': overrides
+                    }
+                    msg = json.dumps(payload).encode()
+                    s.sendall(msg)
+                    resp = s.recv(1024)
+                    if resp == b'OK':
+                        messagebox.showinfo("Success", "Priority overrides updated.")
+                        self.refresh_status(async_mode=True)
+                    else:
+                        messagebox.showerror("Error", "Failed to set priority overrides.")
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to set priority: {e}")
+        self.after(1, do_set)
 
 if __name__ == "__main__":
     app = ThrottleGUI()

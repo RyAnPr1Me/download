@@ -52,6 +52,23 @@ from disk_writer import DiskWriter
 CHUNK_SIZE = 1024 * 1024  # 1MB
 
 class DownloadManager:
+    def _auto_tune(self, total_size):
+        """
+        Auto-tune thread count and chunk size for max speed based on file size and system/network conditions.
+        """
+        import multiprocessing
+        cpu_count = multiprocessing.cpu_count()
+        # For very large files, use more threads
+        if total_size >= 2 * 1024 * 1024 * 1024:  # >=2GB
+            threads = min(32, cpu_count * 2)
+            chunk_size = 8 * 1024 * 1024
+        elif total_size >= 512 * 1024 * 1024:  # >=512MB
+            threads = min(16, cpu_count)
+            chunk_size = 4 * 1024 * 1024
+        else:
+            threads = min(8, cpu_count)
+            chunk_size = 1 * 1024 * 1024
+        return threads, chunk_size
         from ftplib import FTP
         parsed = urlparse(self.url)
         ftp = FTP(parsed.hostname)
@@ -480,29 +497,43 @@ from disk_writer import DiskWriter
             logging.error(f"Download failed: {e}")
 
     def _download_multithreaded(self, total_size):
-        # Multi-threaded download using HTTP Range requests
+        # Aggressive multi-threaded download using HTTP/2, connection pooling, and parallel chunk retry
+        import httpx
+        threads, chunk_size = self._auto_tune(total_size)
+        if self.mode == 'max_speed':
+            threads = max(32, threads)
+            chunk_size = max(8 * 1024 * 1024, chunk_size)
+        url = self.url
+        results = [None] * threads
+        ranges = [(i * (total_size // threads), (i + 1) * (total_size // threads) - 1 if i < threads - 1 else total_size - 1, i)
+                  for i in range(threads)]
         def download_range(start, end, idx):
             headers = {'Range': f'bytes={start}-{end}'}
             try:
-                r = requests.get(self.url, headers=headers, stream=True)
-                r.raise_for_status()
-                return idx, r.content
+                # Use httpx for HTTP/2 and connection pooling
+                with httpx.Client(http2=True, timeout=30) as client:
+                    r = client.get(url, headers=headers)
+                    r.raise_for_status()
+                    return idx, r.content
             except Exception as e:
                 logging.error(f"Thread {idx} failed: {e}")
-                return idx, b''
-        part_size = total_size // self.threads
-        ranges = [(i * part_size, (i + 1) * part_size - 1 if i < self.threads - 1 else total_size - 1, i)
-                  for i in range(self.threads)]
-        results = [None] * self.threads
-        with ThreadPoolExecutor(max_workers=self.threads) as executor, tqdm(
+                # Retry once with requests as fallback
+                try:
+                    r = requests.get(url, headers=headers, stream=True, timeout=30)
+                    r.raise_for_status()
+                    return idx, r.content
+                except Exception as e2:
+                    logging.error(f"Thread {idx} fallback failed: {e2}")
+                    return idx, b''
+        with ThreadPoolExecutor(max_workers=threads) as executor, tqdm(
             total=total_size, unit='B', unit_scale=True, desc=os.path.basename(self.dest)) as pbar:
             futures = {executor.submit(download_range, start, end, idx): idx for start, end, idx in ranges}
             for future in as_completed(futures):
                 idx, data = future.result()
                 results[idx] = data
                 pbar.update(len(data))
-        writer = self._get_disk_writer()
         try:
+            writer = self._get_disk_writer()
             with open(self.dest, 'wb') as f:
                 for part in results:
                     if part:
@@ -517,29 +548,72 @@ if __name__ == "__main__":
         format='%(asctime)s %(levelname)s %(name)s %(message)s',
         handlers=[
             logging.FileHandler("download_manager.log"),
-            logging.StreamHandler()
-        ]
-    )
-    import argparse
-    parser = argparse.ArgumentParser(description="Advanced Download Manager")
-    parser.add_argument('url', help='Download URL')
-    parser.add_argument('dest', help='Destination file path')
-    parser.add_argument('--threads', type=int, default=1, help='Number of download threads (for large files)')
-    parser.add_argument('--no-virus-check', action='store_true', help='Disable virus scan after download')
-    parser.add_argument('--bandwidth', type=int, default=None, help='Manual bandwidth limit in bytes/sec (overrides throttler if set)')
-    parser.add_argument('--mode', choices=['auto', 'manual'], default='auto', help='Throttling mode: auto (use service) or manual (fixed bandwidth)')
-    parser.add_argument('--status', action='store_true', help='Show current throttling status and exit')
-    args = parser.parse_args()
-    dm = DownloadManager(
-        args.url,
-        args.dest,
-        virus_check=not args.no_virus_check,
-        threads=args.threads,
-        manual_bandwidth=args.bandwidth,
-        mode=args.mode,
-        status=args.status
-    )
-    if args.status:
-        dm.print_status()
-    else:
-        dm.download()
+    def download(self):
+        """Main download entry point. Handles all supported protocols and reports events."""
+        import httpx
+        parsed = urlparse(self.url)
+        scheme = parsed.scheme.lower()
+        # Write .meta file for monitor correlation
+        try:
+            meta = {
+                'url': self.url,
+                'dest': self.dest,
+                'ctime': time.time(),
+                'pid': os.getpid(),
+                'protocol': scheme
+            }
+            with open(self.dest + '.meta', 'w') as mf:
+                json.dump(meta, mf)
+        except Exception as e:
+            self.logger.warning(f"Failed to write .meta file: {e}")
+
+        try:
+            if self.is_torrent():
+                self.download_torrent()
+                return
+            if scheme in ('ftp', 'ftps'):
+                self.download_ftp()
+                return
+            if scheme == 'sftp':
+                self.download_sftp()
+                return
+            if scheme == 'smb':
+                self.download_smb()
+                return
+            if scheme == 'file':
+                self.download_file_url()
+                return
+            if self.url.startswith('data:'):
+                self.download_data_url()
+                return
+            # Default: HTTP/HTTPS
+            total_size = 0
+            try:
+                # Use httpx for fast header fetch and HTTP/2
+                with httpx.Client(http2=True, timeout=10) as client:
+                    r = client.head(self.url)
+                    total_size = int(r.headers.get('content-length', 0))
+            except Exception as e:
+                self.logger.error(f"Failed to get HTTP headers: {e}")
+                total_size = 0
+            if self.status:
+                self.print_status()
+            # Max speed mode: auto-tune threads/chunk, disable throttling
+            if self.mode == 'max_speed' and total_size > 0:
+                self.threads, _ = self._auto_tune(total_size)
+                self.manual_bandwidth = None
+            if self.threads > 1 and total_size > 0:
+                self._download_multithreaded(total_size)
+            else:
+                self._download_singlethreaded(total_size)
+            if self.virus_check:
+                try:
+                    scan_if_unsigned(self.dest)
+                except Exception as e:
+                    self.logger.error(f"Virus scan failed: {e}")
+            self.cleanup_temp_files()
+            self.spin_down()
+        except Exception as e:
+            self.logger.error(f"Download failed: {e}")
+            self.cleanup_temp_files()
+            self.spin_down()
