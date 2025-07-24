@@ -19,7 +19,6 @@ class DiskWriter:
         self.fsync_interval = max(1, fsync_interval)  # seconds between fsyncs
         self.logger = logger or logging.getLogger('DiskWriter')
         self._lock = threading.Lock()
-class DiskWriter:
     """
     Efficient, thread-safe, optionally throttled disk writing utility for large files and streaming data.
     Handles chunked writes, adaptive buffering, throttling, error recovery, and resource management.
