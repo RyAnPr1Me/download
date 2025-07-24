@@ -85,7 +85,9 @@ class ThrottleGUI(tk.Tk):
         self.log_text = tk.Text(self.log_frame, height=5, state="disabled", wrap="word")
         self.log_text.pack(fill=tk.BOTH, expand=True)
     def periodic_refresh(self):
-        self.refresh_status()
+        # Only refresh if window is visible (not minimized)
+        if self.state() != 'iconic':
+            self.refresh_status()
         self.after(2000, self.periodic_refresh)
     def apply_config(self):
         # Send config to the throttler service via authenticated IPC
@@ -94,8 +96,7 @@ class ThrottleGUI(tk.Tk):
         mode = self.mode_var.get()
         config = {"bandwidth": bw, "threads": threads, "mode": mode}
         try:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.connect((IPC_HOST, IPC_PORT))
+            with socket.create_connection((IPC_HOST, IPC_PORT), timeout=2) as s:
                 payload = {
                     'token': IPC_AUTH_TOKEN,
                     'event': 'GUI_SET_CONFIG',
@@ -122,8 +123,7 @@ class ThrottleGUI(tk.Tk):
 
     def refresh_status(self):
         try:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.connect((IPC_HOST, IPC_PORT))
+            with socket.create_connection((IPC_HOST, IPC_PORT), timeout=2) as s:
                 payload = {
                     'token': IPC_AUTH_TOKEN,
                     'event': 'GUI',

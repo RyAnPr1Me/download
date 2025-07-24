@@ -173,14 +173,26 @@ class ThrottleService:
                                 bw = config.get('bandwidth')
                                 threads = config.get('threads')
                                 mode = config.get('mode')
-                                # Store config in service (could be used in allocation logic)
-                                self.gui_config = {
-                                    'bandwidth': int(bw) if bw and str(bw).isdigit() else None,
-                                    'threads': int(threads) if threads and str(threads).isdigit() else None,
-                                    'mode': mode if mode in ('auto', 'manual') else 'auto'
-                                }
+                                # Only update if changed
+                                update_needed = False
+                                if not hasattr(self, 'gui_config'):
+                                    update_needed = True
+                                else:
+                                    old = self.gui_config
+                                    if old.get('bandwidth') != (int(bw) if bw and str(bw).isdigit() else None):
+                                        update_needed = True
+                                    if old.get('threads') != (int(threads) if threads and str(threads).isdigit() else None):
+                                        update_needed = True
+                                    if old.get('mode') != (mode if mode in ('auto', 'manual') else 'auto'):
+                                        update_needed = True
+                                if update_needed:
+                                    self.gui_config = {
+                                        'bandwidth': int(bw) if bw and str(bw).isdigit() else None,
+                                        'threads': int(threads) if threads and str(threads).isdigit() else None,
+                                        'mode': mode if mode in ('auto', 'manual') else 'auto'
+                                    }
+                                    self.logger.info(f"GUI config updated: {self.gui_config}")
                                 conn.sendall(b'OK')
-                                self.logger.info(f"GUI config updated: {self.gui_config}")
                             except Exception as e:
                                 self.logger.error(f"Invalid GUI config input: {e}")
                                 conn.sendall(b'ERROR')
