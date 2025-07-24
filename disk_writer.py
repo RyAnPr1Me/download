@@ -158,6 +158,7 @@ class DiskWriter:
     def safe_write(self, path, data, mode='wb', retries=3):
         """
         Write to a file path with retries and atomic replacement.
+        # Optionally flush logs or stats here if needed
         Returns True on success, False on failure.
         """
         tmp_path = path + ".part"

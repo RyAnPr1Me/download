@@ -5,25 +5,14 @@ from urllib.parse import urlparse
 try:
 try:
     import paramiko  # For SFTP
-except ImportError:
-    paramiko = None
-except ImportError:
-    paramiko = None
-try:
-try:
-    import smbclient  # For SMB
-except ImportError:
-    smbclient = None
-except ImportError:
-    smbclient = None
-try:
-try:
-    import libtorrent as lt
-    HAS_TORRENT = True
-except ImportError:
-import base64
-import shutil
+import os
+import socket
+import time
+import logging
 import threading
+import base64
+import json
+import shutil
 from urllib.parse import urlparse
 try:
     import paramiko  # For SFTP
@@ -39,17 +28,10 @@ try:
 except ImportError:
     lt = None
     HAS_TORRENT = False
-import os
-import socket
-import time
-import requests
-import logging
 from virus_check_utils import scan_if_unsigned
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
 from disk_writer import DiskWriter
-
-CHUNK_SIZE = 1024 * 1024  # 1MB
 
 class DownloadManager:
     def _auto_tune(self, total_size):
@@ -69,6 +51,8 @@ class DownloadManager:
             threads = min(8, cpu_count)
             chunk_size = 1 * 1024 * 1024
         return threads, chunk_size
+    
+    def download_ftp(self):
         from ftplib import FTP
         parsed = urlparse(self.url)
         ftp = FTP(parsed.hostname)

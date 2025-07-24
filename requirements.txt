@@ -1,3 +1,8 @@
+paramiko
+smbprotocol
+python-libtorrent
+tqdm
+httpx
 psutil
 requests
 tqdm
