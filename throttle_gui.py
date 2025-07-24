@@ -102,6 +102,7 @@ class ThrottleGUI(tk.Tk):
         self.log_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
         self.log_text = tk.Text(self.log_frame, height=5, state="disabled", wrap="word")
         self.log_text.pack(fill=tk.BOTH, expand=True)
+
     def periodic_refresh(self):
         # Only refresh if window is visible (not minimized)
         if self.state() != 'iconic':
@@ -169,6 +170,9 @@ class ThrottleGUI(tk.Tk):
                     s.sendall(msg)
                     data = s.recv(65536)
                     state = json.loads(data.decode())
+                # Defensive: ensure state is a dict
+                if not isinstance(state, dict):
+                    raise ValueError(f"Invalid throttler response: {state}")
                 self.status_label.config(text=f"Current bandwidth: {state.get('bandwidth', 'N/A')} bytes/s")
                 # System stats
                 sysload = state.get('system_load', {})
@@ -181,7 +185,8 @@ class ThrottleGUI(tk.Tk):
                 new_rows = [(d['pid'], d['name'], d['bw'], d['bw_percent'], f"{d['score']:.2f}") for d in state.get('downloads', [])]
                 if current_rows != new_rows:
                     self.tree.delete(*self.tree.get_children())
-                    self.tree.insert('', 'end', *[{'values': vals} for vals in new_rows])
+                    for vals in new_rows:
+                        self.tree.insert('', 'end', values=vals)
                 # Fill priority entries only if changed
                 prio = state.get('priority_overrides', {})
                 for k, entry in self.prio_entries.items():
@@ -192,7 +197,9 @@ class ThrottleGUI(tk.Tk):
                             entry.insert(0, str(val))
                 self.append_log(f"Status refreshed. Bandwidth: {state.get('bandwidth', 'N/A')} bytes/s")
             except Exception as e:
-                self.append_log(f"Failed to get status: {e}")
+                # Always ensure log_text exists before using append_log
+                if hasattr(self, 'log_text'):
+                    self.append_log(f"Failed to get status: {e}")
                 if not async_mode:
                     messagebox.showerror("Error", f"Failed to get status: {e}")
         if async_mode:

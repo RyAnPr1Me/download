@@ -30,64 +30,100 @@ class ThrottleService:
         return {'large': large, 'small': small}
 
     def calculate_bandwidth(self, downloads):
-        # Enhanced intelligent bandwidth allocation using multiple factors
-        # Use actual available bandwidth from ThrottleUtils
+        # Enhanced bandwidth allocation: fairness, responsiveness, burst, and minimum guarantees
         available_bw = self.utils.get_available_bandwidth(1.0)
-        if not available_bw or available_bw < 1_000_000:  # Fallback if measurement fails or is too low
+        if not available_bw or available_bw < 1_000_000:
             available_bw = 100 * 1024 * 1024  # 100MB/s default
         all_downloads = []
         # Factor weights (tune as needed)
-        WEIGHT_PRIORITY = 0.5
-        WEIGHT_SIZE = 0.2
-        WEIGHT_TYPE = 0.2
-        WEIGHT_ACTIVITY = 0.1
+        WEIGHT_PRIORITY = 0.4
+        WEIGHT_SIZE = 0.15
+        WEIGHT_TYPE = 0.15
+        WEIGHT_ACTIVITY = 0.15
+        WEIGHT_RESPONSIVENESS = 0.15
+        MIN_BW = 2 * 1024 * 1024  # 2MB/s minimum per download
+        BURST_BW = 20 * 1024 * 1024  # 20MB/s burst if system is idle
         # Helper to normalize size (log scale for fairness)
         def norm_size(sz):
             import math
             return math.log2(sz + 1) if sz > 0 else 0
+        # Helper to get responsiveness (lower latency = higher score)
+        def norm_responsiveness(proc):
+            try:
+                if hasattr(proc, 'pid') and proc.pid != 'installer':
+                    p = psutil.Process(proc.pid)
+                    return max(0, 1.0 - min(1.0, p.cpu_times().user / (p.cpu_times().user + 1)))
+            except Exception:
+                pass
+            return 0.5
+        # Helper to get activity (I/O rate, placeholder)
+        def norm_activity(proc):
+            try:
+                if hasattr(proc, 'pid') and proc.pid != 'installer':
+                    p = psutil.Process(proc.pid)
+                    io = p.io_counters()
+                    return min(1.0, (io.write_bytes + io.read_bytes) / (100*1024*1024))
+            except Exception:
+                pass
+            return 0.5
         # Build download info with all factors
         for d in downloads['large']:
             prio = self.priority_overrides.get(d.pid, 3) if hasattr(self, 'priority_overrides') else 3
             size_factor = norm_size(d.total_bytes)
-            type_factor = 2  # Large download
-            activity_factor = 1  # Placeholder, could use I/O rate
+            type_factor = 2
+            activity_factor = norm_activity(d)
+            responsiveness = norm_responsiveness(d)
             all_downloads.append({'pid': d.pid, 'name': d.name, 'size': d.total_bytes, 'priority': prio,
-                                 'size_factor': size_factor, 'type_factor': type_factor, 'activity_factor': activity_factor})
+                                 'size_factor': size_factor, 'type_factor': type_factor,
+                                 'activity_factor': activity_factor, 'responsiveness': responsiveness})
         for d in downloads['small']:
             prio = self.priority_overrides.get(d.pid, 2) if hasattr(self, 'priority_overrides') else 2
             size_factor = norm_size(d.total_bytes)
-            type_factor = 1  # Small download
-            activity_factor = 1  # Placeholder
+            type_factor = 1
+            activity_factor = norm_activity(d)
+            responsiveness = norm_responsiveness(d)
             all_downloads.append({'pid': d.pid, 'name': d.name, 'size': d.total_bytes, 'priority': prio,
-                                 'size_factor': size_factor, 'type_factor': type_factor, 'activity_factor': activity_factor})
+                                 'size_factor': size_factor, 'type_factor': type_factor,
+                                 'activity_factor': activity_factor, 'responsiveness': responsiveness})
         prio = self.priority_overrides.get('installer', 2) if hasattr(self, 'priority_overrides') else 2
-        size_factor = 0  # Installer size not tracked here
-        type_factor = 1.5  # Installer gets medium type weight
-        activity_factor = 1  # Placeholder
+        size_factor = 0
+        type_factor = 1.5
+        activity_factor = 0.5
+        responsiveness = 1.0
         all_downloads.append({'pid': 'installer', 'name': 'SecureInstaller', 'size': 0, 'priority': prio,
-                             'size_factor': size_factor, 'type_factor': type_factor, 'activity_factor': activity_factor})
+                             'size_factor': size_factor, 'type_factor': type_factor,
+                             'activity_factor': activity_factor, 'responsiveness': responsiveness})
         # Calculate weighted score for each download
         for d in all_downloads:
             d['score'] = (
                 WEIGHT_PRIORITY * d['priority'] +
                 WEIGHT_SIZE * d['size_factor'] +
                 WEIGHT_TYPE * d['type_factor'] +
-                WEIGHT_ACTIVITY * d['activity_factor']
+                WEIGHT_ACTIVITY * d['activity_factor'] +
+                WEIGHT_RESPONSIVENESS * d['responsiveness']
             )
         total_score = sum(d['score'] for d in all_downloads)
-        # Allocate bandwidth as a percentage of total score
+        # Allocate bandwidth as a percentage of total score, with fairness and burst
+        idle = False
+        try:
+            sysload = self.utils.get_system_load()
+            idle = sysload['cpu'] < 10 and sysload['net'] < 5*1024*1024
+        except Exception:
+            pass
         for d in all_downloads:
-            d['bw'] = int(available_bw * (d['score'] / total_score)) if total_score > 0 else 0
+            base_bw = int(available_bw * (d['score'] / total_score)) if total_score > 0 else 0
+            # Guarantee minimum bandwidth
+            d['bw'] = max(base_bw, MIN_BW)
+            # Allow burst if system is idle
+            if idle:
+                d['bw'] = max(d['bw'], BURST_BW)
             d['bw_percent'] = round(100 * d['bw'] / available_bw, 2) if available_bw > 0 else 0
-        # Find the installer allocation
         installer_bw = next((d['bw'] for d in all_downloads if d['pid'] == 'installer'), None)
-        # Log allocations for transparency
         logger = logging.getLogger('ThrottleService')
         logger.info(f"[Bandwidth] Measured available: {available_bw:.2f} bytes/s")
         logger.info("Bandwidth allocations:")
         for d in all_downloads:
             logger.info(f"  {d['name']} (pid={d['pid']}): {d['bw']} bytes/s ({d['bw_percent']}%) [score={d['score']:.2f}]")
-        # Add system resource stats for GUI
         sysload = self.utils.get_system_load()
         self.current_state = {
             'bandwidth': installer_bw,
