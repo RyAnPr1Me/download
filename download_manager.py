@@ -21,12 +21,24 @@ try:
     import libtorrent as lt
     HAS_TORRENT = True
 except ImportError:
-    lt = None
-    HAS_TORRENT = False
+import base64
+import shutil
+import threading
+from urllib.parse import urlparse
+try:
+    import paramiko  # For SFTP
+except ImportError:
+    paramiko = None
+try:
+    import smbclient  # For SMB
+except ImportError:
+    smbclient = None
+try:
+    import libtorrent as lt
     HAS_TORRENT = True
 except ImportError:
+    lt = None
     HAS_TORRENT = False
-
 import os
 import socket
 import time
@@ -35,31 +47,11 @@ import logging
 from virus_check_utils import scan_if_unsigned
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
-import threading  # Ensure threading is imported for all uses
 from disk_writer import DiskWriter
-
-# IPC client config
-
-IPC_HOST = '127.0.0.1'
-IPC_PORT = 54321
-# Shared secret for local IPC authentication
-import os
-import json
-IPC_AUTH_TOKEN = os.environ.get('THROTTLE_IPC_TOKEN', 'changeme-secret-token')
-
 
 CHUNK_SIZE = 1024 * 1024  # 1MB
 
-
-
 class DownloadManager:
-    def _get_disk_writer(self):
-        return DiskWriter(
-            throttle_bps=self.get_bandwidth_limit(),
-            chunk_size=CHUNK_SIZE,
-            logger=self.logger
-        )
-    def download_ftp(self):
         from ftplib import FTP
         parsed = urlparse(self.url)
         ftp = FTP(parsed.hostname)
