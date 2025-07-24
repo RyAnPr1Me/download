@@ -219,6 +219,12 @@ class ThrottleService:
                     with self.lock:
                         self.bandwidth_allocation = allocation
                     self.logger.info(f"[ThrottleService] Allocation: {allocation}")
+                    # Heartbeat file update
+                    try:
+                        with open('throttle_service.heartbeat', 'w') as hb:
+                            hb.write(str(time.time()))
+                    except Exception as e:
+                        self.logger.warning(f"Failed to update heartbeat file: {e}")
                 except Exception as e:
                     self.logger.error(f"Monitor loop error: {e}")
                 time.sleep(2)

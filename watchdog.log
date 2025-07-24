@@ -1,0 +1,21 @@
+2025-07-24 18:12:38,367 INFO Watchdog Watchdog started. Monitoring C:\Users\ryanlocal\sinstaller and process C:\Users\ryanlocal\sinstaller\throttle_service.py
+2025-07-24 18:12:38,368 INFO Watchdog New suspicious file detected: C:\Users\ryanlocal\sinstaller\install_throttle_service.bat
+2025-07-24 18:12:38,372 INFO Watchdog Started monitored process C:\Users\ryanlocal\sinstaller\throttle_service.py (pid=9520)
+2025-07-24 18:12:38,372 WARNING Watchdog Heartbeat file service_heartbeat.txt not found. Waiting for service to create it.
+2025-07-24 18:12:38,680 WARNING Watchdog Threat detected in C:\Users\ryanlocal\sinstaller\install_throttle_service.bat: Scan starting...
+Scan finished.
+Scanning C:\Users\ryanlocal\sinstaller\install_throttle_service.bat found no threats.
+2025-07-24 18:12:40,373 WARNING Watchdog Heartbeat file service_heartbeat.txt not found. Waiting for service to create it.
+2025-07-24 18:12:42,374 WARNING Watchdog Heartbeat file service_heartbeat.txt not found. Waiting for service to create it.
+2025-07-24 18:12:44,375 WARNING Watchdog Heartbeat file service_heartbeat.txt not found. Waiting for service to create it.
+2025-07-24 18:12:46,376 WARNING Watchdog Heartbeat file service_heartbeat.txt not found. Waiting for service to create it.
+2025-07-24 18:12:48,377 WARNING Watchdog Heartbeat file service_heartbeat.txt not found. Waiting for service to create it.
+2025-07-24 18:12:50,378 WARNING Watchdog Heartbeat file service_heartbeat.txt not found. Waiting for service to create it.
+2025-07-24 18:12:52,379 WARNING Watchdog Heartbeat file service_heartbeat.txt not found. Waiting for service to create it.
+2025-07-24 18:12:54,380 WARNING Watchdog Heartbeat file service_heartbeat.txt not found. Waiting for service to create it.
+2025-07-24 18:12:56,381 WARNING Watchdog Heartbeat file service_heartbeat.txt not found. Waiting for service to create it.
+2025-07-24 18:12:58,382 WARNING Watchdog Heartbeat file service_heartbeat.txt not found. Waiting for service to create it.
+2025-07-24 18:13:00,382 WARNING Watchdog Heartbeat file service_heartbeat.txt not found. Waiting for service to create it.
+2025-07-24 18:13:02,383 WARNING Watchdog Heartbeat file service_heartbeat.txt not found. Waiting for service to create it.
+2025-07-24 18:13:04,384 WARNING Watchdog Heartbeat file service_heartbeat.txt not found. Waiting for service to create it.
+2025-07-24 18:13:06,385 WARNING Watchdog Heartbeat file service_heartbeat.txt not found. Waiting for service to create it.
