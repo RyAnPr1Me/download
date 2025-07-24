@@ -3,15 +3,26 @@ import shutil
 import threading
 from urllib.parse import urlparse
 try:
+try:
     import paramiko  # For SFTP
 except ImportError:
     paramiko = None
+except ImportError:
+    paramiko = None
+try:
 try:
     import smbclient  # For SMB
 except ImportError:
     smbclient = None
+except ImportError:
+    smbclient = None
+try:
 try:
     import libtorrent as lt
+    HAS_TORRENT = True
+except ImportError:
+    lt = None
+    HAS_TORRENT = False
     HAS_TORRENT = True
 except ImportError:
     HAS_TORRENT = False
@@ -151,7 +162,70 @@ class DownloadManager:
     def download_torrent(self):
         """Download a torrent file using libtorrent if available."""
         # Optional dependency: libtorrent (python-libtorrent)
-        import libtorrent as lt
+        if not lt:
+            logging.error("libtorrent is not installed. Torrent support is unavailable.")
+            return
+        # ...existing code for torrent download...
+        ses = lt.session()
+        ses.listen_on(6881, 6891)
+        info = lt.torrent_info(self.url)
+        params = { 'save_path': os.path.dirname(self.dest), 'ti': info }
+        h = ses.add_torrent(params)
+        logging.info(f"Starting torrent download: {self.url}")
+        while not h.is_seed():
+            s = h.status()
+            logging.info(f"Torrent progress: {s.progress * 100:.2f}%")
+            time.sleep(1)
+        # Move to final destination
+        for f in info.files():
+            src = os.path.join(os.path.dirname(self.dest), f.path)
+            dst = os.path.join(self.dest, f.path)
+            os.rename(src, dst)
+        logging.info(f"Torrent download complete: {self.dest}")
+        if self.virus_check:
+            scan_if_unsigned(self.dest)
+        self.cleanup_temp_files()
+        self.spin_down()
+        ses = lt.session()
+        ses.listen_on(6881, 6891)
+        params = { 'save_path': os.path.dirname(self.dest) or '.', 'storage_mode': lt.storage_mode_t(2) }
+        if self.url.startswith('magnet:'):
+            h = lt.add_magnet_uri(ses, self.url, params)
+        else:
+            info = lt.torrent_info(self.url)
+            h = ses.add_torrent({'ti': info, 'save_path': params['save_path']})
+        logging.info(f"Starting torrent download: {self.url}")
+        pbar = None
+        while not h.is_seed():
+            s = h.status()
+
+import base64
+import shutil
+import threading
+from urllib.parse import urlparse
+try:
+    import paramiko  # For SFTP
+except ImportError:
+    paramiko = None
+try:
+    import smbclient  # For SMB
+except ImportError:
+    smbclient = None
+try:
+    import libtorrent as lt
+    HAS_TORRENT = True
+except ImportError:
+    lt = None
+    HAS_TORRENT = False
+import os
+import socket
+import time
+import requests
+import logging
+from virus_check_utils import scan_if_unsigned
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from tqdm import tqdm
+from disk_writer import DiskWriter
         ses = lt.session()
         ses.listen_on(6881, 6891)
         info = lt.torrent_info(self.url)

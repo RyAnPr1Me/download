@@ -12,7 +12,9 @@ try:
     from etw.descriptors import FileIoWrite
 except ImportError:
     print("You must install the 'etw' Python package: pip install etw")
-    sys.exit(1)
+    ETW = None
+    FileIoWrite = None
+    # Do not exit, allow script to be imported for linting
 
 # IPC config (reuse from download_manager.py)
 IPC_HOST = '127.0.0.1'
