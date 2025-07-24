@@ -1,5 +1,6 @@
 import base64
 import shutil
+import threading
 from urllib.parse import urlparse
 try:
     import paramiko  # For SFTP
@@ -34,7 +35,38 @@ import os
 import json
 IPC_AUTH_TOKEN = os.environ.get('THROTTLE_IPC_TOKEN', 'changeme-secret-token')
 
+
 CHUNK_SIZE = 1024 * 1024  # 1MB
+
+# Disk write utility for robust, optionally throttled writes
+def disk_write_util(f, data, throttle_bps=None, chunk_size=CHUNK_SIZE):
+    """
+    Write data to file object f in chunks, optionally throttling to throttle_bps (bytes/sec).
+    Accepts bytes or file-like object (for streaming).
+    """
+    import time
+    if hasattr(data, 'read'):
+        # Stream from file-like
+        while True:
+            chunk = data.read(chunk_size)
+            if not chunk:
+                break
+            f.write(chunk)
+            f.flush()
+            if throttle_bps:
+                time.sleep(len(chunk) / throttle_bps)
+    elif isinstance(data, (bytes, bytearray)):
+        total = len(data)
+        offset = 0
+        while offset < total:
+            chunk = data[offset:offset+chunk_size]
+            f.write(chunk)
+            f.flush()
+            if throttle_bps:
+                time.sleep(len(chunk) / throttle_bps)
+            offset += len(chunk)
+    else:
+        raise ValueError("Unsupported data type for disk_write_util")
 
 class DownloadManager:
     def download_ftp(self):
@@ -47,7 +79,7 @@ class DownloadManager:
             ftp.login()
         with open(self.dest, 'wb') as f:
             def callback(data):
-                f.write(data)
+                disk_write_util(f, data, throttle_bps=self.get_bandwidth_limit())
             ftp.retrbinary(f'RETR {parsed.path}', callback)
         ftp.quit()
         logging.info(f"FTP download complete: {self.dest}")
@@ -67,7 +99,9 @@ class DownloadManager:
         transport = paramiko.Transport((parsed.hostname, parsed.port or 22))
         transport.connect(username=parsed.username, password=parsed.password)
         sftp = paramiko.SFTPClient.from_transport(transport)
-        sftp.get(parsed.path, self.dest)
+        with open(self.dest, 'wb') as out_f:
+            with sftp.open(parsed.path, 'rb') as in_f:
+                disk_write_util(out_f, in_f, throttle_bps=self.get_bandwidth_limit())
         sftp.close()
         transport.close()
         logging.info(f"SFTP download complete: {self.dest}")
@@ -85,7 +119,7 @@ class DownloadManager:
             return
         parsed = urlparse(self.url)
         with smbclient.open_file(self.url, mode='rb') as src, open(self.dest, 'wb') as dst:
-            shutil.copyfileobj(src, dst)
+            disk_write_util(dst, src, throttle_bps=self.get_bandwidth_limit())
         logging.info(f"SMB download complete: {self.dest}")
         if self.virus_check:
             try:
@@ -98,7 +132,8 @@ class DownloadManager:
     def download_file_url(self):
         parsed = urlparse(self.url)
         src_path = parsed.path
-        shutil.copyfile(src_path, self.dest)
+        with open(src_path, 'rb') as src, open(self.dest, 'wb') as dst:
+            disk_write_util(dst, src, throttle_bps=self.get_bandwidth_limit())
         logging.info(f"File URL copy complete: {self.dest}")
         if self.virus_check:
             try:
@@ -116,7 +151,7 @@ class DownloadManager:
         else:
             data = encoded.encode()
         with open(self.dest, 'wb') as f:
-            f.write(data)
+            disk_write_util(f, data, throttle_bps=self.get_bandwidth_limit())
         logging.info(f"Data URL download complete: {self.dest}")
         if self.virus_check:
             try:
@@ -370,11 +405,11 @@ class DownloadManager:
                 r.raise_for_status()
                 last_time = time.time()
                 last_bytes = 0
+                chunk_size = CHUNK_SIZE
                 for chunk in r.iter_content(chunk_size=chunk_size):
                     if not self.running:
                         break
-                    f.write(chunk)
-                    f.flush()
+                    disk_write_util(f, chunk, throttle_bps=self.get_bandwidth_limit(), chunk_size=chunk_size)
                     pbar.update(len(chunk))
                     # Adaptive chunk size logic
                     now = time.time()
@@ -385,15 +420,11 @@ class DownloadManager:
                         if speed > 0:
                             target_time = 0.3
                             new_chunk = int(speed * target_time)
-                            new_chunk = max(min_chunk, min(max_chunk, new_chunk))
-                            if abs(new_chunk - chunk_size) > min_chunk:
+                            new_chunk = max(64 * 1024, min(8 * 1024 * 1024, new_chunk))
+                            if abs(new_chunk - chunk_size) > 64 * 1024:
                                 chunk_size = new_chunk
                         last_time = now
                         last_bytes = pbar.n
-                    bw = self.get_bandwidth_limit()
-                    if bw:
-                        # Sleep to throttle if needed
-                        time.sleep(len(chunk) / bw)
         except Exception as e:
             logging.error(f"Download failed: {e}")
 
@@ -423,7 +454,7 @@ class DownloadManager:
             with open(self.dest, 'wb') as f:
                 for part in results:
                     if part:
-                        f.write(part)
+                        disk_write_util(f, part, throttle_bps=self.get_bandwidth_limit())
         except Exception as e:
             logging.error(f"Failed to write file: {e}")
 
