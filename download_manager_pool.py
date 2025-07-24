@@ -28,8 +28,14 @@ class DownloadManagerPool:
                     self.small_thread.start()
 
     def _run_large(self, url, dest, kwargs):
-        mgr = DownloadManager(url, dest, **kwargs)
-        mgr.download()
+        try:
+            mgr = DownloadManager(url, dest, **kwargs)
+            mgr.download()
+        except Exception as e:
+            if 'Defender scan failed' in str(e):
+                print(f"[Warning] Windows Defender scan failed for {dest}. This may be due to Defender not being available, insufficient permissions, or a system misconfiguration. Skipping scan.")
+            else:
+                print(f"[Error] Large download failed: {url} -> {e}")
 
     def _run_small_batch(self):
         while not self.small_queue.empty() and self.running:
@@ -38,7 +44,10 @@ class DownloadManagerPool:
                 mgr = DownloadManager(url, dest, **kwargs)
                 mgr.download()
             except Exception as e:
-                print(f"Small download failed: {url} -> {e}")
+                if 'Defender scan failed' in str(e):
+                    print(f"[Warning] Windows Defender scan failed for {dest}. This may be due to Defender not being available, insufficient permissions, or a system misconfiguration. Skipping scan.")
+                else:
+                    print(f"Small download failed: {url} -> {e}")
             self.small_queue.task_done()
 
     def wait_all(self):
