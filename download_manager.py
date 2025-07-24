@@ -25,6 +25,7 @@ from virus_check_utils import scan_if_unsigned
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
 import threading  # Ensure threading is imported for all uses
+from disk_writer import DiskWriter
 
 # IPC client config
 
@@ -38,37 +39,15 @@ IPC_AUTH_TOKEN = os.environ.get('THROTTLE_IPC_TOKEN', 'changeme-secret-token')
 
 CHUNK_SIZE = 1024 * 1024  # 1MB
 
-# Disk write utility for robust, optionally throttled writes
-def disk_write_util(f, data, throttle_bps=None, chunk_size=CHUNK_SIZE):
-    """
-    Write data to file object f in chunks, optionally throttling to throttle_bps (bytes/sec).
-    Accepts bytes or file-like object (for streaming).
-    """
-    import time
-    if hasattr(data, 'read'):
-        # Stream from file-like
-        while True:
-            chunk = data.read(chunk_size)
-            if not chunk:
-                break
-            f.write(chunk)
-            f.flush()
-            if throttle_bps:
-                time.sleep(len(chunk) / throttle_bps)
-    elif isinstance(data, (bytes, bytearray)):
-        total = len(data)
-        offset = 0
-        while offset < total:
-            chunk = data[offset:offset+chunk_size]
-            f.write(chunk)
-            f.flush()
-            if throttle_bps:
-                time.sleep(len(chunk) / throttle_bps)
-            offset += len(chunk)
-    else:
-        raise ValueError("Unsupported data type for disk_write_util")
+
 
 class DownloadManager:
+    def _get_disk_writer(self):
+        return DiskWriter(
+            throttle_bps=self.get_bandwidth_limit(),
+            chunk_size=CHUNK_SIZE,
+            logger=self.logger
+        )
     def download_ftp(self):
         from ftplib import FTP
         parsed = urlparse(self.url)
@@ -77,9 +56,10 @@ class DownloadManager:
             ftp.login(parsed.username, parsed.password or '')
         else:
             ftp.login()
+        writer = self._get_disk_writer()
         with open(self.dest, 'wb') as f:
             def callback(data):
-                disk_write_util(f, data, throttle_bps=self.get_bandwidth_limit())
+                writer.write(f, data)
             ftp.retrbinary(f'RETR {parsed.path}', callback)
         ftp.quit()
         logging.info(f"FTP download complete: {self.dest}")
@@ -99,9 +79,10 @@ class DownloadManager:
         transport = paramiko.Transport((parsed.hostname, parsed.port or 22))
         transport.connect(username=parsed.username, password=parsed.password)
         sftp = paramiko.SFTPClient.from_transport(transport)
+        writer = self._get_disk_writer()
         with open(self.dest, 'wb') as out_f:
             with sftp.open(parsed.path, 'rb') as in_f:
-                disk_write_util(out_f, in_f, throttle_bps=self.get_bandwidth_limit())
+                writer.write(out_f, in_f)
         sftp.close()
         transport.close()
         logging.info(f"SFTP download complete: {self.dest}")
@@ -118,8 +99,9 @@ class DownloadManager:
             logging.error("smbclient is not installed. SMB not supported.")
             return
         parsed = urlparse(self.url)
+        writer = self._get_disk_writer()
         with smbclient.open_file(self.url, mode='rb') as src, open(self.dest, 'wb') as dst:
-            disk_write_util(dst, src, throttle_bps=self.get_bandwidth_limit())
+            writer.write(dst, src)
         logging.info(f"SMB download complete: {self.dest}")
         if self.virus_check:
             try:
@@ -132,8 +114,9 @@ class DownloadManager:
     def download_file_url(self):
         parsed = urlparse(self.url)
         src_path = parsed.path
+        writer = self._get_disk_writer()
         with open(src_path, 'rb') as src, open(self.dest, 'wb') as dst:
-            disk_write_util(dst, src, throttle_bps=self.get_bandwidth_limit())
+            writer.write(dst, src)
         logging.info(f"File URL copy complete: {self.dest}")
         if self.virus_check:
             try:
@@ -150,8 +133,9 @@ class DownloadManager:
             data = base64.b64decode(encoded)
         else:
             data = encoded.encode()
+        writer = self._get_disk_writer()
         with open(self.dest, 'wb') as f:
-            disk_write_util(f, data, throttle_bps=self.get_bandwidth_limit())
+            writer.write(f, data)
         logging.info(f"Data URL download complete: {self.dest}")
         if self.virus_check:
             try:
@@ -399,6 +383,7 @@ class DownloadManager:
         min_chunk = 64 * 1024  # 64KB
         max_chunk = 8 * 1024 * 1024  # 8MB
         chunk_size = CHUNK_SIZE
+        writer = self._get_disk_writer()
         try:
             with requests.get(self.url, stream=True) as r, open(self.dest, 'wb') as f, tqdm(
                 total=total_size, unit='B', unit_scale=True, desc=os.path.basename(self.dest)) as pbar:
@@ -409,7 +394,7 @@ class DownloadManager:
                 for chunk in r.iter_content(chunk_size=chunk_size):
                     if not self.running:
                         break
-                    disk_write_util(f, chunk, throttle_bps=self.get_bandwidth_limit(), chunk_size=chunk_size)
+                    writer.write(f, chunk)
                     pbar.update(len(chunk))
                     # Adaptive chunk size logic
                     now = time.time()
@@ -450,11 +435,12 @@ class DownloadManager:
                 idx, data = future.result()
                 results[idx] = data
                 pbar.update(len(data))
+        writer = self._get_disk_writer()
         try:
             with open(self.dest, 'wb') as f:
                 for part in results:
                     if part:
-                        disk_write_util(f, part, throttle_bps=self.get_bandwidth_limit())
+                        writer.write(f, part)
         except Exception as e:
             logging.error(f"Failed to write file: {e}")
 
