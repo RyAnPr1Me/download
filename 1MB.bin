@@ -1,0 +1,17 @@
+<html>
+
+<head>
+  <title>speed.hetzner.de</title>
+</head>
+
+<body>
+  <script>
+    var content = "PGNlbnRlcj48aDE+VGVzdC1GaWxlczwvYnI+VGhpcyBlbmRwb2ludCBpcyBkZXByZWNhdGVkITwvYnI+T3VyIG5ldyByZWdpb24gc3BlY2lmaWMgZW5kcG9pbnRzIGNhbiBiZSBmb3VkIGhlcmU6PC9oMT48cD48YSBocmVmPSJodHRwczovL25iZzEtc3BlZWQuaGV0em5lci5jb20iPmh0dHBzOi8vbmJnMS1zcGVlZC5oZXR6bmVyLmNvbTwvYT48L3A+PHA+PGEgaHJlZj0iaHR0cHM6Ly9mc24xLXNwZWVkLmhldHpuZXIuY29tIj5odHRwczovL2ZzbjEtc3BlZWQuaGV0em5lci5jb208L2E+PC9wPjxwPjxhIGhyZWY9Imh0dHBzOi8vaGVsMS1zcGVlZC5oZXR6bmVyLmNvbSI+aHR0cHM6Ly9oZWwxLXNwZWVkLmhldHpuZXIuY29tPC9hPjwvcD48cD48YSBocmVmPSJodHRwczovL2FzaC1zcGVlZC5oZXR6bmVyLmNvbSI+aHR0cHM6Ly9hc2gtc3BlZWQuaGV0em5lci5jb208L2E+PC9wPjxwPjxhIGhyZWY9Imh0dHBzOi8vaGlsLXNwZWVkLmhldHpuZXIuY29tIj5odHRwczovL2hpbC1zcGVlZC5oZXR6bmVyLmNvbTwvYT48L3A+PHA+PGEgaHJlZj0iaHR0cHM6Ly9zaW4tc3BlZWQuaGV0em5lci5jb20iPmh0dHBzOi8vc2luLXNwZWVkLmhldHpuZXIuY29tPC9hPjwvcD48L2NlbnRlcj4KCg==";
+
+    window.onload = function () {
+      document.querySelector('body').innerHTML = window.atob(content);
+    }
+  </script>
+</body>
+
+</html>

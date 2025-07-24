@@ -28,6 +28,106 @@ class DownloadManagerGUI(tk.Tk):
         notebook.add(self.throttle_tab, text="Throttle Settings")
         notebook.pack(fill=tk.BOTH, expand=True)
 
+        # --- Code Auto-Update Tab ---
+        self.update_tab = ttk.Frame(notebook)
+        notebook.add(self.update_tab, text="Auto-Update")
+        self.update_folder_var = tk.StringVar()
+        self.service_name_var = tk.StringVar(value="ThrottleService")
+        self.code_folder_var = tk.StringVar(value=os.getcwd())
+        ttk.Label(self.update_tab, text="Folder to Monitor for Updates:").pack(pady=(10,0))
+        folder_frame = ttk.Frame(self.update_tab)
+        folder_frame.pack(pady=2)
+        update_entry = ttk.Entry(folder_frame, textvariable=self.update_folder_var, width=44)
+        update_entry.pack(side=tk.LEFT, padx=(0,5))
+        browse_btn = ttk.Button(folder_frame, text="Browse", command=self._browse_update_folder)
+        browse_btn.pack(side=tk.LEFT)
+    def _browse_update_folder(self):
+        from tkinter import filedialog
+        folder = filedialog.askdirectory(initialdir=self.update_folder_var.get() or os.getcwd())
+        if folder:
+            self.update_folder_var.set(folder)
+        ttk.Label(self.update_tab, text="Service Name:").pack(pady=(10,0))
+        service_entry = ttk.Entry(self.update_tab, textvariable=self.service_name_var, width=30)
+        service_entry.pack(pady=2)
+        ttk.Label(self.update_tab, text="Code Folder (to update):").pack(pady=(10,0))
+        code_entry = ttk.Entry(self.update_tab, textvariable=self.code_folder_var, width=50)
+        code_entry.pack(pady=2)
+        self.update_status_var = tk.StringVar(value="Idle.")
+        ttk.Label(self.update_tab, textvariable=self.update_status_var).pack(pady=5)
+        self.update_btn = ttk.Button(self.update_tab, text="Start Monitoring", command=self.toggle_update_monitor)
+        self.update_btn.pack(pady=10)
+        self.update_monitor_thread = None
+        self.update_monitor_running = False
+
+    def toggle_update_monitor(self):
+        if not self.update_monitor_running:
+            folder = self.update_folder_var.get().strip()
+            service = self.service_name_var.get().strip()
+            code_folder = self.code_folder_var.get().strip()
+            if not folder or not service or not code_folder:
+                self.update_status_var.set("Please fill all fields.")
+                return
+            self.update_monitor_running = True
+            self.update_btn.config(text="Stop Monitoring")
+            self.update_status_var.set("Monitoring for code updates...")
+            import threading
+            self.update_monitor_thread = threading.Thread(target=self._run_update_monitor, args=(folder, service, code_folder), daemon=True)
+            self.update_monitor_thread.start()
+        else:
+            self.update_monitor_running = False
+            self.update_btn.config(text="Start Monitoring")
+            self.update_status_var.set("Stopped.")
+
+    def _run_update_monitor(self, watch_folder, service_name, code_folder):
+        import hashlib, os, time, shutil, subprocess, threading
+        def hash_folder(folder):
+            h = hashlib.sha256()
+            for root, dirs, files in os.walk(folder):
+                for f in sorted(files):
+                    path = os.path.join(root, f)
+                    try:
+                        stat = os.stat(path)
+                        h.update(f.encode())
+                        h.update(str(stat.st_mtime).encode())
+                        h.update(str(stat.st_size).encode())
+                    except Exception:
+                        continue
+            return h.hexdigest()
+        def stop_service(service_name):
+            subprocess.run(["sc", "stop", service_name], capture_output=True)
+        def start_service(service_name):
+            subprocess.run(["sc", "start", service_name], capture_output=True)
+        def update_code(src_folder, dst_folder):
+            for root, dirs, files in os.walk(src_folder):
+                rel = os.path.relpath(root, src_folder)
+                dst_root = os.path.join(dst_folder, rel)
+                os.makedirs(dst_root, exist_ok=True)
+                for f in files:
+                    src_file = os.path.join(root, f)
+                    dst_file = os.path.join(dst_root, f)
+                    shutil.copy2(src_file, dst_file)
+        last_hash = hash_folder(watch_folder)
+        while self.update_monitor_running:
+            time.sleep(2)
+            try:
+                new_hash = hash_folder(watch_folder)
+                if new_hash != last_hash:
+                    self.update_status_var.set("Change detected! Updating service in background...")
+                    def do_update():
+                        try:
+                            stop_service(service_name)
+                            update_code(watch_folder, code_folder)
+                            time.sleep(1)
+                            start_service(service_name)
+                            self.update_status_var.set("Service updated and restarted.")
+                        except Exception as e:
+                            self.update_status_var.set(f"Update failed: {e}")
+                    threading.Thread(target=do_update, daemon=True).start()
+                    last_hash = new_hash
+            except Exception as e:
+                self.update_status_var.set(f"Monitor error: {e}")
+        self.update_status_var.set("Stopped.")
+
         # --- Download Tab ---
         self.ssl_var = tk.BooleanVar(value=True)
         self.virus_scan_var = tk.BooleanVar(value=True)
