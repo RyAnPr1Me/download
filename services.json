@@ -1,0 +1,27 @@
+[
+  {
+    "watch_folder": "C:/path/to/throttle_service_src",
+    "service_name": "ThrottleService",
+    "code_folder": "C:/Program Files/ThrottleService"
+  },
+  {
+    "watch_folder": "C:/path/to/download_manager_src",
+    "service_name": "DownloadManager",
+    "code_folder": "C:/Program Files/DownloadManager"
+  },
+  {
+    "watch_folder": "C:/path/to/download_monitor_src",
+    "service_name": "DownloadMonitor",
+    "code_folder": "C:/Program Files/DownloadMonitor"
+  },
+  {
+    "watch_folder": "C:/path/to/supervisor_src",
+    "service_name": "ThrottleSupervisor",
+    "code_folder": "C:/Program Files/ThrottleSupervisor"
+  },
+  {
+    "watch_folder": "C:/path/to/watchdog_src",
+    "service_name": "Watchdog",
+    "code_folder": "C:/Program Files/Watchdog"
+  }
+]

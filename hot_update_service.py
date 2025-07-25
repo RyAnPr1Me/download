@@ -22,10 +22,16 @@ def hash_folder(folder):
     return h.hexdigest()
 
 def stop_service(service_name):
-    subprocess.run(["sc", "stop", service_name], capture_output=True)
+    try:
+        subprocess.run(["sc", "stop", service_name], capture_output=True)
+    except Exception as e:
+        logging.error(f"Failed to stop {service_name}: {e}")
 
 def start_service(service_name):
-    subprocess.run(["sc", "start", service_name], capture_output=True)
+    try:
+        subprocess.run(["sc", "start", service_name], capture_output=True)
+    except Exception as e:
+        logging.error(f"Failed to start {service_name}: {e}")
 
 def update_code(src_folder, dst_folder):
     for root, dirs, files in os.walk(src_folder):
@@ -37,27 +43,50 @@ def update_code(src_folder, dst_folder):
             dst_file = os.path.join(dst_root, f)
             shutil.copy2(src_file, dst_file)
 
-def monitor_and_update(watch_folder, service_name, code_folder, poll_interval=2):
-    logging.basicConfig(level=logging.INFO)
-    logger = logging.getLogger('HotUpdater')
+def monitor_service(entry, poll_interval=2):
+    logger = logging.getLogger(f"HotUpdater.{entry['service_name']}")
+    watch_folder = entry['watch_folder']
+    service_name = entry['service_name']
+    code_folder = entry['code_folder']
     last_hash = hash_folder(watch_folder)
     logger.info(f"Initial hash: {last_hash}")
     while True:
         time.sleep(poll_interval)
-        new_hash = hash_folder(watch_folder)
-        if new_hash != last_hash:
-            logger.info("Change detected! Stopping service and updating code...")
-            stop_service(service_name)
-            update_code(watch_folder, code_folder)
-            time.sleep(1)
-            start_service(service_name)
-            logger.info("Service restarted with new code.")
-            last_hash = new_hash
+        try:
+            new_hash = hash_folder(watch_folder)
+            if new_hash != last_hash:
+                logger.info("Change detected! Stopping service and updating code...")
+                stop_service(service_name)
+                update_code(watch_folder, code_folder)
+                time.sleep(1)
+                start_service(service_name)
+                logger.info("Service restarted with new code.")
+                last_hash = new_hash
+        except Exception as e:
+            logger.error(f"Error in monitor loop: {e}")
+
+def load_services_config(config_path):
+    import json
+    with open(config_path, 'r') as f:
+        return json.load(f)
+
+def main():
+    import argparse
+    parser = argparse.ArgumentParser(description="Hot update multiple services from config file.")
+    parser.add_argument('--config', type=str, default='services.json', help='Path to services config JSON')
+    args = parser.parse_args()
+    logging.basicConfig(level=logging.INFO)
+    services = load_services_config(args.config)
+    threads = []
+    for entry in services:
+        t = threading.Thread(target=monitor_service, args=(entry,), daemon=True)
+        t.start()
+        threads.append(t)
+    for t in threads:
+        t.join()
 
 if __name__ == "__main__":
-    # Example usage: monitor_and_update('\\\\server\\shared\\code', 'ThrottleService', 'C:/Program Files/ThrottleService')
-    import sys
-    if len(sys.argv) != 4:
-        print("Usage: python hot_update_service.py <watch_folder> <service_name> <code_folder>")
-        sys.exit(1)
-    monitor_and_update(sys.argv[1], sys.argv[2], sys.argv[3])
+    main()
+
+if __name__ == "__main__":
+    main()
