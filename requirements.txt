@@ -8,3 +8,4 @@ requests
 tqdm
 pywin32
 etw
+pylance

@@ -57,8 +57,17 @@ def start_watchdog(target_script, download_dir):
     monitor_thread.start()
     logger.info(f"Watchdog started. Monitoring {download_dir} and process {target_script}")
 
-    HEARTBEAT_FILE = 'service_heartbeat.txt'  # The main service should update this file regularly
+    HEARTBEAT_FILE = 'watchdog.heartbeat'
     HEARTBEAT_TIMEOUT = 15  # seconds
+    def heartbeat_loop():
+        while True:
+            try:
+                with open(HEARTBEAT_FILE, 'w') as hb:
+                    hb.write(str(time.time()))
+            except Exception:
+                pass
+            time.sleep(2)
+    threading.Thread(target=heartbeat_loop, daemon=True).start()
 
     while True:
         try:

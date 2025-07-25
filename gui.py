@@ -223,30 +223,30 @@ class DownloadManagerGUI(tk.Tk):
         self._start_service_status_thread()
     def _start_service_status_thread(self):
         import threading
+        import time
         def check_services():
-            import time
+            HEARTBEATS = [
+                ("ThrottleService", "throttle_service.heartbeat", self.throttle_status_var, self.throttle_status_label),
+                ("DownloadManager", "download_manager.heartbeat", self.dlmgr_status_var, self.dlmgr_status_label),
+                ("DownloadMonitor", "download_monitor.heartbeat", self.dlmon_status_var, self.dlmon_status_label),
+                ("Watchdog", "watchdog.heartbeat", self.watchdog_status_var, self.watchdog_status_label),
+                ("Supervisor", "supervisor.heartbeat", self.supervisor_status_var, self.supervisor_status_label),
+            ]
             while not self._service_status_update_stop:
+                now = time.time()
                 results = {}
-                for name, port, var, label in [
-                    ("ThrottleService", IPC_PORT, self.throttle_status_var, self.throttle_status_label),
-                    ("DownloadManager", 54323, self.dlmgr_status_var, self.dlmgr_status_label),
-                    ("DownloadMonitor", 54322, self.dlmon_status_var, self.dlmon_status_label),
-                    ("Watchdog", 54324, self.watchdog_status_var, self.watchdog_status_label),
-                    ("Supervisor", 54325, self.supervisor_status_var, self.supervisor_status_label),
-                ]:
+                for name, hbfile, var, label in HEARTBEATS:
                     try:
-                        with socket.create_connection((IPC_HOST, port), timeout=1):
+                        stat = os.stat(hbfile)
+                        age = now - stat.st_mtime
+                        if age < 10:
                             results[name] = ("Active", "green")
+                        else:
+                            results[name] = ("Inactive", "red")
                     except Exception:
                         results[name] = ("Inactive", "red")
                 def update_labels():
-                    for name, port, var, label in [
-                        ("ThrottleService", IPC_PORT, self.throttle_status_var, self.throttle_status_label),
-                        ("DownloadManager", 54323, self.dlmgr_status_var, self.dlmgr_status_label),
-                        ("DownloadMonitor", 54322, self.dlmon_status_var, self.dlmon_status_label),
-                        ("Watchdog", 54324, self.watchdog_status_var, self.watchdog_status_label),
-                        ("Supervisor", 54325, self.supervisor_status_var, self.supervisor_status_label),
-                    ]:
+                    for name, hbfile, var, label in HEARTBEATS:
                         status, color = results[name]
                         var.set(f"{name}: {status}")
                         label.config(foreground=color)

@@ -276,10 +276,20 @@ class DownloadMonitor:
 
 if __name__ == "__main__":
     import argparse
+    import threading
+    def heartbeat_loop():
+        while True:
+            try:
+                with open('download_monitor.heartbeat', 'w') as hb:
+                    hb.write(str(time.time()))
+            except Exception:
+                pass
+            time.sleep(2)
     parser = argparse.ArgumentParser(description="Download Monitor for Throttler")
     parser.add_argument('--roots', nargs='*', help='Root directories to scan (default: all drives or /)')
     args = parser.parse_args()
     mon = DownloadMonitor()
+    threading.Thread(target=heartbeat_loop, daemon=True).start()
     try:
         mon.monitor_filesystem(args.roots)
     except KeyboardInterrupt:

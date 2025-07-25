@@ -5,6 +5,15 @@ import os
 import time
 
 def main():
+    import threading
+    def heartbeat_loop():
+        while True:
+            try:
+                with open('supervisor.heartbeat', 'w') as hb:
+                    hb.write(str(time.time()))
+            except Exception:
+                pass
+            time.sleep(2)
     # Launch watchdog.py to monitor throttle_service.py
     throttle_service_script = os.path.abspath('throttle_service.py')
     download_dir = os.getcwd()  # Or set to a specific downloads directory
@@ -15,6 +24,7 @@ def main():
     download_monitor_proc = subprocess.Popen([sys.executable, 'download_monitor.py'])
     download_manager_proc = subprocess.Popen([sys.executable, 'download_manager.py', '--status', 'http://localhost/dummy', 'dummyfile'])
 
+    threading.Thread(target=heartbeat_loop, daemon=True).start()
     try:
         # Wait for the watchdog (throttle_service) to exit, then shut down others
         watchdog_proc.wait()

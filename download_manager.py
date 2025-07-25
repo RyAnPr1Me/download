@@ -484,8 +484,16 @@ IPC_AUTH_TOKEN = 'changeme'
 
 # --- Main entrypoint: start takeover server if run as main ---
 if __name__ == "__main__":
+    def heartbeat_loop():
+        while True:
+            try:
+                with open('download_manager.heartbeat', 'w') as hb:
+                    hb.write(str(time.time()))
+            except Exception:
+                pass
+            time.sleep(2)
     threading.Thread(target=start_takeover_server, daemon=True).start()
-    # Optionally, you can add CLI/interactive logic here, or just keep the server running
+    threading.Thread(target=heartbeat_loop, daemon=True).start()
     print("[DownloadManager] Ready for takeover requests.")
     try:
         while True:
