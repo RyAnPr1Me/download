@@ -1,0 +1,27 @@
+{
+  "log_directory": "C:/Users/ryanlocal/sinstaller/logs/",
+  "default_level": "INFO",
+  "format": "%(asctime)s %(levelname)s [%(name)s] %(message)s",
+  "services": {
+    "ThrottleService": {
+      "level": "INFO",
+      "file": "throttle_service.log"
+    },
+    "DownloadManager": {
+      "level": "INFO",
+      "file": "download_manager.log"
+    },
+    "DownloadMonitor": {
+      "level": "INFO",
+      "file": "download_monitor.log"
+    },
+    "ThrottleSupervisor": {
+      "level": "INFO",
+      "file": "supervisor.log"
+    },
+    "Watchdog": {
+      "level": "INFO",
+      "file": "watchdog.log"
+    }
+  }
+}

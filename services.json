@@ -1,27 +1,41 @@
-[
-  {
-    "watch_folder": "C:/path/to/throttle_service_src",
-    "service_name": "ThrottleService",
-    "code_folder": "C:/Program Files/ThrottleService"
-  },
-  {
-    "watch_folder": "C:/path/to/download_manager_src",
-    "service_name": "DownloadManager",
-    "code_folder": "C:/Program Files/DownloadManager"
-  },
-  {
-    "watch_folder": "C:/path/to/download_monitor_src",
-    "service_name": "DownloadMonitor",
-    "code_folder": "C:/Program Files/DownloadMonitor"
-  },
-  {
-    "watch_folder": "C:/path/to/supervisor_src",
-    "service_name": "ThrottleSupervisor",
-    "code_folder": "C:/Program Files/ThrottleSupervisor"
-  },
-  {
-    "watch_folder": "C:/path/to/watchdog_src",
-    "service_name": "Watchdog",
-    "code_folder": "C:/Program Files/Watchdog"
-  }
-]
+{
+  "version": "1.0.0",
+  "last_updated": "2025-07-25",
+  "services": [
+    {
+      "watch_folder": "C:/Users/ryanlocal/sinstaller/",
+      "service_name": "ThrottleService",
+      "script_file": "throttle_service.py",
+      "code_folder": "C:/Program Files/ThrottleService",
+      "description": "Handles system-wide bandwidth throttling and enforcement."
+    },
+    {
+      "watch_folder": "C:/Users/ryanlocal/sinstaller/",
+      "service_name": "DownloadManager",
+      "script_file": "download_manager.py",
+      "code_folder": "C:/Program Files/DownloadManager",
+      "description": "Manages download tasks and coordinates with the throttler."
+    },
+    {
+      "watch_folder": "C:/Users/ryanlocal/sinstaller/",
+      "service_name": "DownloadMonitor",
+      "script_file": "download_and_install.py",
+      "code_folder": "C:/Program Files/DownloadMonitor",
+      "description": "Monitors download progress and triggers post-download actions."
+    },
+    {
+      "watch_folder": "C:/Users/ryanlocal/sinstaller/",
+      "service_name": "ThrottleSupervisor",
+      "script_file": "supervisor.py",
+      "code_folder": "C:/Program Files/ThrottleSupervisor",
+      "description": "Supervises all services and restarts them if needed."
+    },
+    {
+      "watch_folder": "C:/Users/ryanlocal/sinstaller/",
+      "service_name": "Watchdog",
+      "script_file": "watchdog.py",
+      "code_folder": "C:/Program Files/Watchdog",
+      "description": "Watches for service failures and system anomalies."
+    }
+  ]
+}

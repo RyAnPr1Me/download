@@ -6,12 +6,11 @@ import shutil
 import sys
 
 # CONFIGURATION
-SERVICE_NAME = "ThrottleService"  # Change to your actual service name
+SERVICE_NAMES = ["ThrottleService", "DownloadMonitor", "ThrottleSupervisor", "DownloadManager", "Watchdog"]
 WATCH_FOLDER = os.path.dirname(os.path.abspath(__file__))
 CHECK_INTERVAL = 2  # seconds
 CODE_EXTENSIONS = {'.py', '.exe', '.dll'}  # Files to watch for changes
 
-# Helper to hash all code files in the folder
 def hash_folder(folder, exts):
     h = hashlib.sha256()
     for root, dirs, files in os.walk(folder):
@@ -44,14 +43,16 @@ def main():
         time.sleep(CHECK_INTERVAL)
         new_hash = hash_folder(WATCH_FOLDER, CODE_EXTENSIONS)
         if new_hash != last_hash:
-            print("Change detected! Stopping service, updating code, and restarting...")
-            stop_service(SERVICE_NAME)
+            print("Change detected! Stopping all services, updating code, and restarting...")
+            for svc in SERVICE_NAMES:
+                stop_service(svc)
             # Here you could pull new code from a remote location, e.g.:
             # subprocess.run(["git", "pull"], cwd=WATCH_FOLDER)
             # Or copy from a network share, etc.
-            # For now, just restart the service
-            start_service(SERVICE_NAME)
-            print("Service restarted with updated code.")
+            # For now, just restart the services
+            for svc in SERVICE_NAMES:
+                start_service(svc)
+            print("All services restarted with updated code.")
             last_hash = new_hash
 
 if __name__ == "__main__":
