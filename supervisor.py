@@ -5,6 +5,7 @@ import time
 
 def main():
     import threading
+    from download_manager_pool import DownloadManagerPool
 
     def heartbeat_loop():
         while True:
@@ -15,29 +16,23 @@ def main():
                 pass
             time.sleep(2)
 
-    def launch_process(cmd, name):
-        return subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-
     throttle_service_script = os.path.abspath('throttle_service.py')
     download_monitor_script = os.path.abspath('download_monitor.py')
-    download_manager_script = os.path.abspath('download_manager.py')
     download_dir = os.getcwd()  # Or set to a specific downloads directory
 
     threading.Thread(target=heartbeat_loop, daemon=True).start()
 
     procs = {
         'throttle_service': None,
-        'download_monitor': None,
-        'download_manager': None
+        'download_monitor': None
     }
+
+    def launch_process(cmd, name):
+        return subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
     def start_all():
         procs['throttle_service'] = launch_process([sys.executable, throttle_service_script], 'throttle_service')
         procs['download_monitor'] = launch_process([sys.executable, download_monitor_script], 'download_monitor')
-        procs['download_manager'] = launch_process(
-            [sys.executable, download_manager_script, '--status', 'http://localhost/dummy', 'dummyfile'],
-            'download_manager'
-        )
 
     def terminate_all():
         for p in procs.values():
@@ -53,8 +48,16 @@ def main():
                 except Exception:
                     pass
 
+    # Initialize the download manager pool
+    pool = DownloadManagerPool()
+
     start_all()
     print("[Supervisor] All components launched.")
+
+    # Example: Add downloads to the pool (replace with actual download logic as needed)
+    pool.add_download("https://speed.hetzner.de/100MB.bin", "100MB.bin", size=120*1024*1024)
+    pool.add_download("https://speed.hetzner.de/1MB.bin", "1MB.bin", size=1*1024*1024)
+    pool.add_download("https://speed.hetzner.de/2MB.bin", "2MB.bin", size=2*1024*1024)
 
     try:
         while True:
@@ -62,21 +65,19 @@ def main():
             for name, proc in procs.items():
                 if proc and proc.poll() is not None:
                     print(f"[Supervisor] {name} exited with code {proc.returncode}. Restarting...")
-                    # Restart the process
                     if name == 'throttle_service':
                         procs[name] = launch_process([sys.executable, throttle_service_script], name)
                     elif name == 'download_monitor':
                         procs[name] = launch_process([sys.executable, download_monitor_script], name)
-                    elif name == 'download_manager':
-                        procs[name] = launch_process(
-                            [sys.executable, download_manager_script, '--status', 'http://localhost/dummy', 'dummyfile'],
-                            name
-                        )
+            # Optionally, monitor and add downloads to the pool here
+
     except KeyboardInterrupt:
         print("[Supervisor] Shutting down all components...")
         terminate_all()
+        pool.stop()
     finally:
         terminate_all()
+        pool.stop()
 
 # --- Windows Service Wrapper ---
 try:
