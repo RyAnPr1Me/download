@@ -5,6 +5,17 @@ This application suite provides a secure, high-performance download manager and 
 
 ---
 
+## Workflow Summary
+- **Supervisor** launches and monitors all core services: ThrottleService, DownloadMonitor, and DownloadManager.
+- **ThrottleService** dynamically allocates bandwidth and enforces throttling policies.
+- **DownloadMonitor** detects new downloads on the filesystem and can trigger secure takeover by DownloadManager.
+- **DownloadManager** handles all downloads, supports multiple protocols, and performs security checks.
+- **GUI** provides real-time status, configuration, and control.
+- All components communicate via authenticated local TCP IPC and are monitored via heartbeat files.
+- If any service fails, Supervisor will automatically restart it.
+
+---
+
 ## Features
 - **Dynamic Bandwidth Throttling:** Automatically allocates bandwidth based on system load, download size, and running applications (e.g., Steam, Xbox, Epic).
 - **Multi-Protocol Support:** HTTP(S), FTP, SFTP, SMB, file, data URLs, and torrents.

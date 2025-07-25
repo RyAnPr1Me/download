@@ -19,6 +19,18 @@
 
 ---
 
+## 1a. Workflow
+
+- Supervisor starts and monitors ThrottleService, DownloadMonitor, and DownloadManager as persistent subprocesses or Windows services.
+- ThrottleService enforces bandwidth allocation and responds to GUI/config requests.
+- DownloadMonitor watches the filesystem for new downloads and can request DownloadManager to take over and secure downloads.
+- DownloadManager performs all downloads, supports multiple protocols, and runs a takeover server for secure handoff.
+- All components use authenticated local TCP IPC and heartbeat files for health/status.
+- If any component fails, Supervisor restarts it automatically.
+- The GUI interacts with ThrottleService and DownloadManager for real-time control and status.
+
+---
+
 ## 2. Setup & Installation
 
 1. Install Python 3.9+ and all dependencies:

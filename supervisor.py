@@ -5,7 +5,6 @@ import time
 
 def main():
     import threading
-    from download_manager_pool import DownloadManagerPool
 
     def heartbeat_loop():
         while True:
@@ -16,68 +15,54 @@ def main():
                 pass
             time.sleep(2)
 
-    throttle_service_script = os.path.abspath('throttle_service.py')
-    download_monitor_script = os.path.abspath('download_monitor.py')
-    download_dir = os.getcwd()  # Or set to a specific downloads directory
+    # Service names must match those registered with Windows
+    SERVICES = [
+        "ThrottleService",
+        "DownloadMonitorService",
+        "DownloadManagerService"
+    ]
+
+    def is_service_running(service_name):
+        try:
+            result = subprocess.run(
+                ["sc", "query", service_name],
+                capture_output=True, text=True, timeout=5
+            )
+            return "RUNNING" in result.stdout
+        except Exception:
+            return False
+
+    def start_service(service_name):
+        try:
+            subprocess.run(["sc", "start", service_name], capture_output=True, timeout=10)
+        except Exception:
+            pass
+
+    def stop_service(service_name):
+        try:
+            subprocess.run(["sc", "stop", service_name], capture_output=True, timeout=10)
+        except Exception:
+            pass
 
     threading.Thread(target=heartbeat_loop, daemon=True).start()
 
-    procs = {
-        'throttle_service': None,
-        'download_monitor': None
-    }
-
-    def launch_process(cmd, name):
-        return subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-
-    def start_all():
-        procs['throttle_service'] = launch_process([sys.executable, throttle_service_script], 'throttle_service')
-        procs['download_monitor'] = launch_process([sys.executable, download_monitor_script], 'download_monitor')
-
-    def terminate_all():
-        for p in procs.values():
-            if p and p.poll() is None:
-                try:
-                    p.terminate()
-                except Exception:
-                    pass
-        for p in procs.values():
-            if p:
-                try:
-                    p.wait(timeout=5)
-                except Exception:
-                    pass
-
-    # Initialize the download manager pool
-    pool = DownloadManagerPool()
-
-    start_all()
-    print("[Supervisor] All components launched.")
-
-    # Example: Add downloads to the pool (replace with actual download logic as needed)
-    pool.add_download("https://speed.hetzner.de/100MB.bin", "100MB.bin", size=120*1024*1024)
-    pool.add_download("https://speed.hetzner.de/1MB.bin", "1MB.bin", size=1*1024*1024)
-    pool.add_download("https://speed.hetzner.de/2MB.bin", "2MB.bin", size=2*1024*1024)
+    # Ensure all services are running
+    for svc in SERVICES:
+        if not is_service_running(svc):
+            print(f"[Supervisor] Starting {svc}...")
+            start_service(svc)
 
     try:
         while True:
             time.sleep(2)
-            for name, proc in procs.items():
-                if proc and proc.poll() is not None:
-                    print(f"[Supervisor] {name} exited with code {proc.returncode}. Restarting...")
-                    if name == 'throttle_service':
-                        procs[name] = launch_process([sys.executable, throttle_service_script], name)
-                    elif name == 'download_monitor':
-                        procs[name] = launch_process([sys.executable, download_monitor_script], name)
-            # Optionally, monitor and add downloads to the pool here
-
+            for svc in SERVICES:
+                if not is_service_running(svc):
+                    print(f"[Supervisor] Detected {svc} stopped. Restarting...")
+                    start_service(svc)
     except KeyboardInterrupt:
-        print("[Supervisor] Shutting down all components...")
-        terminate_all()
-        pool.stop()
-    finally:
-        terminate_all()
-        pool.stop()
+        print("[Supervisor] Shutting down all managed services...")
+        for svc in SERVICES:
+            stop_service(svc)
 
 # --- Windows Service Wrapper ---
 try:
@@ -98,6 +83,25 @@ try:
             self.thread = None
 
         def SvcStop(self):
+            self.ReportServiceStatus(win32service.SERVICE_STOP_PENDING)
+            os._exit(0)
+            win32event.SetEvent(self.hWaitStop)
+
+        def SvcDoRun(self):
+            servicemanager.LogInfoMsg("SupervisorService is starting.")
+            self.thread = threading.Thread(target=main, daemon=True)
+            self.thread.start()
+            win32event.WaitForSingleObject(self.hWaitStop, win32event.INFINITE)
+            servicemanager.LogInfoMsg("SupervisorService is stopping.")
+
+except ImportError:
+    SupervisorService = None
+
+if __name__ == "__main__":
+    if 'win32serviceutil' in sys.modules and len(sys.argv) == 1:
+        win32serviceutil.HandleCommandLine(SupervisorService)
+    else:
+        main()
             self.ReportServiceStatus(win32service.SERVICE_STOP_PENDING)
             os._exit(0)
             win32event.SetEvent(self.hWaitStop)
