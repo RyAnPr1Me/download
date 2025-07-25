@@ -18,6 +18,13 @@ if errorlevel 1 (
 )
 set PYTHON_EXE=pythonw.exe
 
+
+REM Generate a secure IPC key and store in .env
+if not exist .env (
+    powershell -Command "$k=[guid]::NewGuid().ToString('N') + [guid]::NewGuid().ToString('N'); Set-Content -Path .env -Value \"THROTTLE_IPC_TOKEN=$k\""
+    echo Generated secure IPC key in .env
+)
+
 REM Install Python dependencies
 if exist requirements.txt (
     echo Installing Python dependencies...
@@ -51,9 +58,10 @@ REM Create desktop shortcut for GUI as 'Conductor'
 set GUI_SCRIPT=%~dp0gui.py
 set SHORTCUT_NAME=Conductor.lnk
 set DESKTOP=%USERPROFILE%\Desktop
+set ICON_PATH=%~dp0icon.ico
 if exist "%DESKTOP%" (
-    echo Creating desktop shortcut for GUI as 'Conductor'...
-    powershell -Command "$s=(New-Object -COM WScript.Shell).CreateShortcut('%DESKTOP%\\%SHORTCUT_NAME%');$s.TargetPath='%PYTHON_EXE%';$s.Arguments='\"%GUI_SCRIPT%\"';$s.WorkingDirectory='%~dp0';$s.IconLocation='%~dp0icon.ico';$s.Save()"
+    echo Creating desktop shortcut for GUI as 'Conductor' with icon.ico...
+    powershell -Command "$s=(New-Object -COM WScript.Shell).CreateShortcut('%DESKTOP%\\%SHORTCUT_NAME%');$s.TargetPath='%PYTHON_EXE%';$s.Arguments='\"%GUI_SCRIPT%\"';$s.WorkingDirectory='%~dp0';$s.IconLocation='%ICON_PATH%';$s.Save()"
     echo Shortcut created on desktop as 'Conductor'.
 )
 

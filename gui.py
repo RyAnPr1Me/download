@@ -28,107 +28,7 @@ class DownloadManagerGUI(tk.Tk):
         notebook.add(self.throttle_tab, text="Throttle Settings")
         notebook.pack(fill=tk.BOTH, expand=True)
 
-        # --- Code Auto-Update Tab ---
-        self.update_tab = ttk.Frame(notebook)
-        notebook.add(self.update_tab, text="Auto-Update")
-        self.update_folder_var = tk.StringVar()
-        self.service_name_var = tk.StringVar(value="ThrottleService")
-        self.code_folder_var = tk.StringVar(value=os.getcwd())
-        ttk.Label(self.update_tab, text="Folder to Monitor for Updates:").pack(pady=(10,0))
-        folder_frame = ttk.Frame(self.update_tab)
-        folder_frame.pack(pady=2)
-        update_entry = ttk.Entry(folder_frame, textvariable=self.update_folder_var, width=44)
-        update_entry.pack(side=tk.LEFT, padx=(0,5))
-        browse_btn = ttk.Button(folder_frame, text="Browse", command=self._browse_update_folder)
-        browse_btn.pack(side=tk.LEFT)
-    def _browse_update_folder(self):
-        from tkinter import filedialog
-        folder = filedialog.askdirectory(initialdir=self.update_folder_var.get() or os.getcwd())
-        if folder:
-            self.update_folder_var.set(folder)
-        ttk.Label(self.update_tab, text="Service Name:").pack(pady=(10,0))
-        service_entry = ttk.Entry(self.update_tab, textvariable=self.service_name_var, width=30)
-        service_entry.pack(pady=2)
-        ttk.Label(self.update_tab, text="Code Folder (to update):").pack(pady=(10,0))
-        code_entry = ttk.Entry(self.update_tab, textvariable=self.code_folder_var, width=50)
-        code_entry.pack(pady=2)
-        self.update_status_var = tk.StringVar(value="Idle.")
-        ttk.Label(self.update_tab, textvariable=self.update_status_var).pack(pady=5)
-        self.update_btn = ttk.Button(self.update_tab, text="Start Monitoring", command=self.toggle_update_monitor)
-        self.update_btn.pack(pady=10)
-        self.update_monitor_thread = None
-        self.update_monitor_running = False
-
-    def toggle_update_monitor(self):
-        if not self.update_monitor_running:
-            folder = self.update_folder_var.get().strip()
-            service = self.service_name_var.get().strip()
-            code_folder = self.code_folder_var.get().strip()
-            if not folder or not service or not code_folder:
-                self.update_status_var.set("Please fill all fields.")
-                return
-            self.update_monitor_running = True
-            self.update_btn.config(text="Stop Monitoring")
-            self.update_status_var.set("Monitoring for code updates...")
-            import threading
-            self.update_monitor_thread = threading.Thread(target=self._run_update_monitor, args=(folder, service, code_folder), daemon=True)
-            self.update_monitor_thread.start()
-        else:
-            self.update_monitor_running = False
-            self.update_btn.config(text="Start Monitoring")
-            self.update_status_var.set("Stopped.")
-
-    def _run_update_monitor(self, watch_folder, service_name, code_folder):
-        import hashlib, os, time, shutil, subprocess, threading
-        def hash_folder(folder):
-            h = hashlib.sha256()
-            for root, dirs, files in os.walk(folder):
-                for f in sorted(files):
-                    path = os.path.join(root, f)
-                    try:
-                        stat = os.stat(path)
-                        h.update(f.encode())
-                        h.update(str(stat.st_mtime).encode())
-                        h.update(str(stat.st_size).encode())
-                    except Exception:
-                        continue
-            return h.hexdigest()
-        def stop_service(service_name):
-            subprocess.run(["sc", "stop", service_name], capture_output=True)
-        def start_service(service_name):
-            subprocess.run(["sc", "start", service_name], capture_output=True)
-        def update_code(src_folder, dst_folder):
-            for root, dirs, files in os.walk(src_folder):
-                rel = os.path.relpath(root, src_folder)
-                dst_root = os.path.join(dst_folder, rel)
-                os.makedirs(dst_root, exist_ok=True)
-                for f in files:
-                    src_file = os.path.join(root, f)
-                    dst_file = os.path.join(dst_root, f)
-                    shutil.copy2(src_file, dst_file)
-        last_hash = hash_folder(watch_folder)
-        while self.update_monitor_running:
-            time.sleep(2)
-            try:
-                new_hash = hash_folder(watch_folder)
-                if new_hash != last_hash:
-                    self.update_status_var.set("Change detected! Updating service in background...")
-                    def do_update():
-                        try:
-                            stop_service(service_name)
-                            update_code(watch_folder, code_folder)
-                            time.sleep(1)
-                            start_service(service_name)
-                            self.update_status_var.set("Service updated and restarted.")
-                        except Exception as e:
-                            self.update_status_var.set(f"Update failed: {e}")
-                    threading.Thread(target=do_update, daemon=True).start()
-                    last_hash = new_hash
-            except Exception as e:
-                self.update_status_var.set(f"Monitor error: {e}")
-        self.update_status_var.set("Stopped.")
-
-        # --- Download Tab ---
+        # --- Download Tab UI ---
         self.ssl_var = tk.BooleanVar(value=True)
         self.virus_scan_var = tk.BooleanVar(value=True)
         self.sig_check_var = tk.BooleanVar(value=True)
@@ -164,13 +64,78 @@ class DownloadManagerGUI(tk.Tk):
         ttk.Label(chunk_frame, text="Chunk Size (bytes):").pack(side=tk.LEFT)
         chunk_entry = ttk.Entry(chunk_frame, textvariable=self.chunk_size_var, width=10)
         chunk_entry.pack(side=tk.LEFT, padx=5)
-        # Progress bar and download button
+        # --- Code Auto-Update Tab ---
+        self.update_tab = ttk.Frame(notebook)
+        notebook.add(self.update_tab, text="Auto-Update")
+        self.update_folder_var = tk.StringVar()
+        self.service_name_var = tk.StringVar(value="ThrottleService")
+        self.code_folder_var = tk.StringVar(value=os.getcwd())
+        self.update_status_var = tk.StringVar(value="Idle.")
+        ttk.Label(self.update_tab, text="Folder to Monitor for Updates:").pack(pady=(10,0))
+        update_folder_frame = ttk.Frame(self.update_tab)
+        update_folder_frame.pack(pady=2)
+        update_entry = ttk.Entry(update_folder_frame, textvariable=self.update_folder_var, width=44)
+        update_entry.pack(side=tk.LEFT, padx=(0,5))
+        update_browse_btn = ttk.Button(update_folder_frame, text="Browse", command=self._browse_update_folder)
+        update_browse_btn.pack(side=tk.LEFT)
+        ttk.Label(self.update_tab, text="Service Name:").pack(pady=(10,0))
+        service_entry = ttk.Entry(self.update_tab, textvariable=self.service_name_var, width=30)
+        service_entry.pack(pady=2)
+        ttk.Label(self.update_tab, text="Code Folder (to update):").pack(pady=(10,0))
+        code_entry = ttk.Entry(self.update_tab, textvariable=self.code_folder_var, width=50)
+        code_entry.pack(pady=2)
+        ttk.Label(self.update_tab, textvariable=self.update_status_var).pack(pady=5)
+        self.update_btn = ttk.Button(self.update_tab, text="Start Monitoring", command=self.toggle_update_monitor)
+        self.update_btn.pack(pady=10)
+        self.update_monitor_thread = None
+        self.update_monitor_running = False
+        # Progress bar, speed label, and download button
         self.progress_bar = ttk.Progressbar(self.download_tab, variable=self.progress_var, maximum=100)
         self.progress_bar.pack(fill=tk.X, padx=20, pady=5)
-        download_btn = ttk.Button(self.download_tab, text="Start Download(s)", command=self.start_download)
-        download_btn.pack(pady=10)
+        self.speed_var = tk.StringVar(value="Speed: 0.00 MB/s")
+        self.speed_label = ttk.Label(self.download_tab, textvariable=self.speed_var)
+        self.speed_label.pack(pady=(0, 5))
+        self.download_btn = ttk.Button(self.download_tab, text="Start Download(s)", command=self.start_download)
+        self.download_btn.pack(pady=10)
 
-        # --- Throttle Tab ---
+        # --- External Download Monitor Section ---
+        self.external_dl_frame = ttk.LabelFrame(self.download_tab, text="Background DownloadMonitor Progress")
+        self.external_dl_frame.pack(fill=tk.X, padx=10, pady=10)
+        self.external_dl_status = tk.StringVar(value="No background downloads detected.")
+        self.external_dl_progress = tk.DoubleVar(value=0)
+        self.external_dl_label = ttk.Label(self.external_dl_frame, textvariable=self.external_dl_status)
+        self.external_dl_label.pack(side=tk.LEFT, padx=5)
+        self.external_dl_bar = ttk.Progressbar(self.external_dl_frame, variable=self.external_dl_progress, maximum=100, length=200)
+        self.external_dl_bar.pack(side=tk.LEFT, padx=10)
+        # Start polling for external download status after all widgets are created
+        self._poll_external_download_status()
+    def _poll_external_download_status(self):
+        # Only poll and update status, do not create any widgets or tabs here
+        try:
+            with socket.create_connection((IPC_HOST, 54322), timeout=1) as s:
+                payload = {
+                    'token': IPC_AUTH_TOKEN,
+                    'event': 'GUI_QUERY_PROGRESS',
+                    'data': None
+                }
+                msg = json.dumps(payload).encode()
+                s.sendall(msg)
+                data = s.recv(4096)
+                resp = json.loads(data.decode())
+                if resp.get('active'):
+                    fname = resp.get('filename', 'Unknown')
+                    percent = float(resp.get('progress', 0))
+                    self.external_dl_status.set(f"Downloading: {fname} ({percent:.1f}%)")
+                    self.external_dl_progress.set(percent)
+                else:
+                    self.external_dl_status.set("No background downloads detected.")
+                    self.external_dl_progress.set(0)
+        except Exception:
+            self.external_dl_status.set("No background downloads detected.")
+            self.external_dl_progress.set(0)
+        self.after(2000, self._poll_external_download_status)
+
+        # --- Throttle Tab UI ---
         self.bandwidth_var = tk.StringVar()
         self.threads_var = tk.StringVar()
         self.mode_var = tk.StringVar(value='auto')
@@ -223,9 +188,113 @@ class DownloadManagerGUI(tk.Tk):
         self.throttle_log_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
         self.throttle_log_text = tk.Text(self.throttle_log_frame, height=8, state="disabled", wrap="word")
         self.throttle_log_text.pack(fill=tk.BOTH, expand=True)
-        # --- Status Bar ---
-        status_bar = ttk.Label(self, textvariable=self.status_var, relief=tk.SUNKEN, anchor=tk.W)
-        status_bar.pack(side=tk.BOTTOM, fill=tk.X)
+
+        # --- Service Status Indicator ---
+        status_frame = ttk.Frame(self.throttle_tab)
+        status_frame.pack(fill=tk.X, padx=10, pady=(0, 5))
+        ttk.Label(status_frame, text="Throttle Service Status:").pack(side=tk.LEFT)
+        self.service_status_label = ttk.Label(status_frame, text="Checking...", foreground="orange")
+        self.service_status_label.pack(side=tk.LEFT, padx=5)
+        self._update_service_status()
+
+        # --- Service Status Indicator ---
+        status_frame = ttk.Frame(self.throttle_tab)
+        status_frame.pack(fill=tk.X, padx=10, pady=(0, 5))
+        ttk.Label(status_frame, text="Throttle Service Status:").pack(side=tk.LEFT)
+        self.service_status_label = ttk.Label(status_frame, text="Checking...", foreground="orange")
+        self.service_status_label.pack(side=tk.LEFT, padx=5)
+        self._update_service_status()
+    def _update_service_status(self):
+        import socket
+        status = "Not Running"
+        color = "red"
+        try:
+            with socket.create_connection((IPC_HOST, IPC_PORT), timeout=1) as s:
+                status = "Running"
+                color = "green"
+        except Exception:
+            pass
+        self.service_status_label.config(text=status, foreground=color)
+        self.after(5000, self._update_service_status)
+    def _browse_update_folder(self):
+        from tkinter import filedialog
+        folder = filedialog.askdirectory(initialdir=self.update_folder_var.get() or os.getcwd())
+        if folder:
+            self.update_folder_var.set(folder)
+
+    def toggle_update_monitor(self):
+        if not self.update_monitor_running:
+            folder = self.update_folder_var.get().strip()
+            service = self.service_name_var.get().strip()
+            code_folder = self.code_folder_var.get().strip()
+            if not folder or not service or not code_folder:
+                self.update_status_var.set("Please fill all fields.")
+                return
+            self.update_monitor_running = True
+            self.update_btn.config(text="Stop Monitoring")
+            self.update_status_var.set("Monitoring for code updates...")
+            import threading
+            self.update_monitor_thread = threading.Thread(target=self._run_update_monitor, args=(folder, service, code_folder), daemon=True)
+            self.update_monitor_thread.start()
+        else:
+            self.update_monitor_running = False
+            self.update_btn.config(text="Start Monitoring")
+            self.update_status_var.set("Stopped.")
+
+    def _run_update_monitor(self, watch_folder, service_name, code_folder):
+        import hashlib, os, time, shutil, subprocess, threading
+        def hash_folder(folder):
+            h = hashlib.sha256()
+            for root, dirs, files in os.walk(folder):
+                for f in sorted(files):
+                    if f == 'throttle_service.heartbeat':
+                        continue
+                    path = os.path.join(root, f)
+                    try:
+                        stat = os.stat(path)
+                        h.update(f.encode())
+                        h.update(str(stat.st_mtime).encode())
+                        h.update(str(stat.st_size).encode())
+                    except Exception:
+                        continue
+            return h.hexdigest()
+        def stop_service(service_name):
+            subprocess.run(["sc", "stop", service_name], capture_output=True)
+        def start_service(service_name):
+            subprocess.run(["sc", "start", service_name], capture_output=True)
+        def update_code(src_folder, dst_folder):
+            for root, dirs, files in os.walk(src_folder):
+                rel = os.path.relpath(root, src_folder)
+                dst_root = os.path.join(dst_folder, rel)
+                os.makedirs(dst_root, exist_ok=True)
+                for f in files:
+                    src_file = os.path.join(root, f)
+                    dst_file = os.path.join(dst_root, f)
+                    shutil.copy2(src_file, dst_file)
+        last_hash = hash_folder(watch_folder)
+        while self.update_monitor_running:
+            time.sleep(2)
+            try:
+                new_hash = hash_folder(watch_folder)
+                if new_hash != last_hash:
+                    self.update_status_var.set("Change detected! Updating service in background...")
+                    def do_update():
+                        try:
+                            update_code(watch_folder, code_folder)
+                            # Restart all relevant Windows services after code update
+                            for svc in [service_name, "DownloadMonitor", "ThrottleSupervisor"]:
+                                stop_service(svc)
+                            time.sleep(1)
+                            for svc in [service_name, "DownloadMonitor", "ThrottleSupervisor"]:
+                                start_service(svc)
+                            self.update_status_var.set("Service(s) updated and restarted.")
+                        except Exception as e:
+                            self.update_status_var.set(f"Update failed: {e}")
+                    threading.Thread(target=do_update, daemon=True).start()
+                    last_hash = new_hash
+            except Exception as e:
+                self.update_status_var.set(f"Monitor error: {e}")
+        self.update_status_var.set("Stopped.")
 
     def _turbo_mode(self):
         # Set max threads, max bandwidth, and max_speed mode
@@ -285,9 +354,7 @@ class DownloadManagerGUI(tk.Tk):
         sig_check = self.sig_check_var.get()
         game_prio = self.game_prio_var.get()
         chunk_size = int(self.chunk_size_var.get() or 1048576)
-        if not urls or not dest_folder:
-            messagebox.showerror("Error", "Please enter at least one URL and a destination folder.")
-            return
+        # Removed duplicate creation of update_tab and notebook.add
         self.set_status("Starting download(s)...")
         self.progress_var.set(0)
         threading.Thread(target=self._run_downloads, args=(urls, dest_folder, ssl_verify, virus_scan, sig_check, game_prio, chunk_size), daemon=True).start()
@@ -295,26 +362,38 @@ class DownloadManagerGUI(tk.Tk):
     def _run_downloads(self, urls, dest_folder, ssl_verify, virus_scan, sig_check, game_prio, chunk_size):
         try:
             import tqdm
+            import time
             orig_tqdm = tqdm.tqdm
-            def gui_tqdm(*args, **kwargs):
-                kwargs['leave'] = False
-                kwargs['file'] = open(os.devnull, 'w')
-                bar = orig_tqdm(*args, **kwargs)
-                total = kwargs.get('total', 0) or 1
-                def update_bar(n):
-                    percent = (n / total) * 100 if total else 0
-                    self.progress_var.set(percent)
-                    self.set_status(f"Downloading... {percent:.1f}%")
-                    self.update_idletasks()
-                bar.update = lambda n=1, orig=bar.update: (orig(n), update_bar(bar.n))
-                return bar
-            tqdm.tqdm = gui_tqdm
             total_files = len(urls)
             for idx, url in enumerate(urls, 1):
                 filename = os.path.basename(url.split('?')[0]) or f"file{idx}"
                 dest = os.path.join(dest_folder, filename)
                 mgr = DownloadManager(url, dest, ssl_verify=ssl_verify, chunk_size=chunk_size)
-                # Download file first
+                # Download file with real-time speed update
+                last_bytes = [0]
+                last_time = [time.time()]
+                def gui_tqdm(*args, **kwargs):
+                    kwargs['leave'] = False
+                    kwargs['file'] = open(os.devnull, 'w')
+                    bar = orig_tqdm(*args, **kwargs)
+                    total = kwargs.get('total', 0) or 1
+                    def update_bar(n):
+                        percent = (n / total) * 100 if total else 0
+                        self.progress_var.set(percent)
+                        now = time.time()
+                        elapsed = now - last_time[0]
+                        bytes_now = n
+                        speed = 0.0
+                        if elapsed > 0.5:
+                            speed = (bytes_now - last_bytes[0]) / elapsed / (1024*1024)
+                            self.speed_var.set(f"Speed: {speed:.2f} MB/s")
+                            last_time[0] = now
+                            last_bytes[0] = bytes_now
+                        self.set_status(f"Downloading... {percent:.1f}%")
+                        self.update_idletasks()
+                    bar.update = lambda n=1, orig=bar.update: (orig(n), update_bar(bar.n))
+                    return bar
+                tqdm.tqdm = gui_tqdm
                 try:
                     mgr.download()
                 except Exception as e:
@@ -343,6 +422,7 @@ class DownloadManagerGUI(tk.Tk):
                         continue
                 self.progress_var.set((idx / total_files) * 100)
                 self.set_status(f"Downloaded {idx}/{total_files}: {filename}")
+                self.speed_var.set("Speed: 0.00 MB/s")
                 # Game prioritization: notify throttle service if enabled
                 if game_prio:
                     try:
@@ -359,12 +439,15 @@ class DownloadManagerGUI(tk.Tk):
             tqdm.tqdm = orig_tqdm
             self.progress_var.set(100)
             self.set_status(f"All downloads complete.")
+            self.speed_var.set("Speed: 0.00 MB/s")
             messagebox.showinfo("Success", f"All downloads complete.")
         except Exception as e:
             self.set_status(f"Download failed: {e}")
+            self.speed_var.set("Speed: 0.00 MB/s")
             messagebox.showerror("Download Failed", str(e))
         finally:
             self.progress_var.set(0)
+            self.speed_var.set("Speed: 0.00 MB/s")
 
     def append_throttle_log(self, msg):
         self.throttle_log_lines.append(msg)
