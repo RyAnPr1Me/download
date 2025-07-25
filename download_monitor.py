@@ -23,14 +23,7 @@ class DownloadEventHandler(FileSystemEventHandler):
         self.monitor = monitor
         self.skip_dirs = skip_dirs
 
-    def on_created(self, event):
-        self._handle_event(event)
-
-    def on_modified(self, event):
-        self._handle_event(event)
-
     def _handle_event(self, event):
-        import mimetypes
         if event.is_directory:
             return
         fpath = event.src_path
@@ -55,8 +48,41 @@ class DownloadEventHandler(FileSystemEventHandler):
             # Heuristic: only consider likely download file types
             likely_exts = ['.exe', '.msi', '.zip', '.rar', '.7z', '.iso', '.dmg', '.pdf', '.mp4', '.mp3', '.jpg', '.png', '.apk', '.bin']
             likely = any(fpath.lower().endswith(ext) for ext in likely_exts)
+            import mimetypes
             mime, _ = mimetypes.guess_type(fpath)
             if not likely and (not mime or not (mime.startswith('application') or mime.startswith('video') or mime.startswith('audio'))):
+                self.monitor.logger.debug(f"Skipped (not likely download type): {fpath}")
+                return
+            signed = is_signed(fpath)
+            # Try to get download URL from .meta file
+            url = None
+            meta_path = fpath + '.meta'
+            if os.path.exists(meta_path):
+                try:
+                    import json
+                    with open(meta_path, 'r') as mf:
+                        meta = json.load(mf)
+                        url = meta.get('url')
+                except Exception as e:
+                    self.monitor.logger.warning(f"Failed to read meta file for {fpath}: {e}")
+            # Optionally, get PID if available (not always possible)
+            pid = None
+            # Send takeover request to DownloadManager
+            try:
+                takeover_payload = {
+                    'token': IPC_AUTH_TOKEN,
+                    'url': url,
+                    'file_path': fpath,
+                    'pid': pid
+                }
+                with socket.create_connection(('127.0.0.1', 54323), timeout=2) as s:
+                    s.sendall(json.dumps(takeover_payload).encode())
+                    resp = s.recv(4096)
+                    self.monitor.logger.info(f"Takeover response for {fpath}: {resp.decode()}")
+            except Exception as e:
+                self.monitor.logger.error(f"Failed to send takeover request for {fpath}: {e}")
+        except Exception as e:
+            self.monitor.logger.error(f"Error handling event for {fpath}: {e}")
                 self.monitor.logger.debug(f"Skipped (unlikely type): {fpath} mime={mime}")
                 return
             signed = is_signed(fpath)

@@ -1,8 +1,9 @@
+
+import os
 import tkinter as tk
 from tkinter import ttk, messagebox
 from download_manager import DownloadManager
 import threading
-import os
 import socket
 import json
 
@@ -23,9 +24,13 @@ class DownloadManagerGUI(tk.Tk):
     def _build_ui(self):
         notebook = ttk.Notebook(self)
         self.download_tab = ttk.Frame(notebook)
+        # --- Throttle Tab ---
         self.throttle_tab = ttk.Frame(notebook)
         notebook.add(self.download_tab, text="Download")
         notebook.add(self.throttle_tab, text="Throttle Settings")
+        # Add a new Status tab
+        self.status_tab = ttk.Frame(notebook)
+        notebook.add(self.status_tab, text="Status")
         notebook.pack(fill=tk.BOTH, expand=True)
 
         # --- Download Tab UI ---
@@ -125,7 +130,12 @@ class DownloadManagerGUI(tk.Tk):
                 if resp.get('active'):
                     fname = resp.get('filename', 'Unknown')
                     percent = float(resp.get('progress', 0))
-                    self.external_dl_status.set(f"Downloading: {fname} ({percent:.1f}%)")
+                    speed = resp.get('speed', None)
+                    if speed is not None:
+                        speed_str = f" @ {speed:.2f} MB/s"
+                    else:
+                        speed_str = ""
+                    self.external_dl_status.set(f"Downloading: {fname} ({percent:.1f}%)" + speed_str)
                     self.external_dl_progress.set(percent)
                 else:
                     self.external_dl_status.set("No background downloads detected.")
@@ -189,33 +199,70 @@ class DownloadManagerGUI(tk.Tk):
         self.throttle_log_text = tk.Text(self.throttle_log_frame, height=8, state="disabled", wrap="word")
         self.throttle_log_text.pack(fill=tk.BOTH, expand=True)
 
-        # --- Service Status Indicator ---
-        status_frame = ttk.Frame(self.throttle_tab)
-        status_frame.pack(fill=tk.X, padx=10, pady=(0, 5))
-        ttk.Label(status_frame, text="Throttle Service Status:").pack(side=tk.LEFT)
-        self.service_status_label = ttk.Label(status_frame, text="Checking...", foreground="orange")
-        self.service_status_label.pack(side=tk.LEFT, padx=5)
-        self._update_service_status()
+        # --- Service Status Bar (now at bottom of Throttle Settings tab) ---
+        # --- Service Status Bar (now in Status tab, with more services) ---
+        status_bar = ttk.Frame(self.status_tab)
+        status_bar.pack(fill=tk.X, side=tk.BOTTOM, padx=0, pady=0)
+        self.throttle_status_var = tk.StringVar(value="ThrottleService: Checking...")
+        self.throttle_status_label = ttk.Label(status_bar, textvariable=self.throttle_status_var, foreground="orange")
+        self.throttle_status_label.pack(side=tk.LEFT, padx=10)
+        self.dlmgr_status_var = tk.StringVar(value="DownloadManager: Checking...")
+        self.dlmgr_status_label = ttk.Label(status_bar, textvariable=self.dlmgr_status_var, foreground="orange")
+        self.dlmgr_status_label.pack(side=tk.LEFT, padx=10)
+        self.dlmon_status_var = tk.StringVar(value="DownloadMonitor: Checking...")
+        self.dlmon_status_label = ttk.Label(status_bar, textvariable=self.dlmon_status_var, foreground="orange")
+        self.dlmon_status_label.pack(side=tk.LEFT, padx=10)
+        self.watchdog_status_var = tk.StringVar(value="Watchdog: Checking...")
+        self.watchdog_status_label = ttk.Label(status_bar, textvariable=self.watchdog_status_var, foreground="orange")
+        self.watchdog_status_label.pack(side=tk.LEFT, padx=10)
+        self.supervisor_status_var = tk.StringVar(value="Supervisor: Checking...")
+        self.supervisor_status_label = ttk.Label(status_bar, textvariable=self.supervisor_status_var, foreground="orange")
+        self.supervisor_status_label.pack(side=tk.LEFT, padx=10)
+        self._service_status_update_thread = None
+        self._service_status_update_stop = False
+        self._start_service_status_thread()
+    def _start_service_status_thread(self):
+        import threading
+        def check_services():
+            import time
+            while not self._service_status_update_stop:
+                results = {}
+                for name, port, var, label in [
+                    ("ThrottleService", IPC_PORT, self.throttle_status_var, self.throttle_status_label),
+                    ("DownloadManager", 54323, self.dlmgr_status_var, self.dlmgr_status_label),
+                    ("DownloadMonitor", 54322, self.dlmon_status_var, self.dlmon_status_label),
+                    ("Watchdog", 54324, self.watchdog_status_var, self.watchdog_status_label),
+                    ("Supervisor", 54325, self.supervisor_status_var, self.supervisor_status_label),
+                ]:
+                    try:
+                        with socket.create_connection((IPC_HOST, port), timeout=1):
+                            results[name] = ("Active", "green")
+                    except Exception:
+                        results[name] = ("Inactive", "red")
+                def update_labels():
+                    for name, port, var, label in [
+                        ("ThrottleService", IPC_PORT, self.throttle_status_var, self.throttle_status_label),
+                        ("DownloadManager", 54323, self.dlmgr_status_var, self.dlmgr_status_label),
+                        ("DownloadMonitor", 54322, self.dlmon_status_var, self.dlmon_status_label),
+                        ("Watchdog", 54324, self.watchdog_status_var, self.watchdog_status_label),
+                        ("Supervisor", 54325, self.supervisor_status_var, self.supervisor_status_label),
+                    ]:
+                        status, color = results[name]
+                        var.set(f"{name}: {status}")
+                        label.config(foreground=color)
+                self.after(0, update_labels)
+                for _ in range(50):
+                    if self._service_status_update_stop:
+                        break
+                    time.sleep(0.1)
+        self._service_status_update_thread = threading.Thread(target=check_services, daemon=True)
+        self._service_status_update_thread.start()
 
-        # --- Service Status Indicator ---
-        status_frame = ttk.Frame(self.throttle_tab)
-        status_frame.pack(fill=tk.X, padx=10, pady=(0, 5))
-        ttk.Label(status_frame, text="Throttle Service Status:").pack(side=tk.LEFT)
-        self.service_status_label = ttk.Label(status_frame, text="Checking...", foreground="orange")
-        self.service_status_label.pack(side=tk.LEFT, padx=5)
-        self._update_service_status()
-    def _update_service_status(self):
-        import socket
-        status = "Not Running"
-        color = "red"
-        try:
-            with socket.create_connection((IPC_HOST, IPC_PORT), timeout=1) as s:
-                status = "Running"
-                color = "green"
-        except Exception:
-            pass
-        self.service_status_label.config(text=status, foreground=color)
-        self.after(5000, self._update_service_status)
+    def destroy(self):
+        self._service_status_update_stop = True
+        if self._service_status_update_thread:
+            self._service_status_update_thread.join(timeout=2)
+        super().destroy()
     def _browse_update_folder(self):
         from tkinter import filedialog
         folder = filedialog.askdirectory(initialdir=self.update_folder_var.get() or os.getcwd())
@@ -517,13 +564,28 @@ class DownloadManagerGUI(tk.Tk):
             cpu = psutil.cpu_percent()
             ram = psutil.virtual_memory().available / (1024*1024)
             disk = psutil.disk_usage('/').percent
-            net = psutil.net_io_counters()
-            bandwidth = (net.bytes_sent + net.bytes_recv) / (1024*1024)  # MB since boot
             threads = multiprocessing.cpu_count()
+            # Calculate current network speed (MB/s)
+            if not hasattr(self, '_last_net'):  # store last counters and time
+                self._last_net = psutil.net_io_counters()
+                self._last_time = psutil.time.time()
+                self._last_speed = 0.0
+            net = psutil.net_io_counters()
+            now = psutil.time.time()
+            elapsed = now - self._last_time
+            if elapsed > 0:
+                bytes_sent = net.bytes_sent - self._last_net.bytes_sent
+                bytes_recv = net.bytes_recv - self._last_net.bytes_recv
+                speed = (bytes_sent + bytes_recv) / elapsed / (1024*1024)
+                self._last_speed = speed
+            else:
+                speed = self._last_speed
+            self._last_net = net
+            self._last_time = now
             self.cpu_label.config(text=f"CPU: {cpu:.1f}%")
             self.ram_label.config(text=f"RAM: {ram:.0f} MB free")
             self.disk_label.config(text=f"Disk: {disk:.1f}% used")
-            self.bandwidth_label.config(text=f"Bandwidth: {bandwidth:.1f} MB (total)")
+            self.bandwidth_label.config(text=f"Bandwidth: {speed:.2f} MB/s")
             self.threads_label.config(text=f"Threads: {threads}")
         except Exception as e:
             self.cpu_label.config(text="CPU: N/A")

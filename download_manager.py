@@ -1,4 +1,118 @@
+
+import os
+import requests
+import socket
+import time
+import logging
+import threading
+import base64
+import json
+import shutil
+from urllib.parse import urlparse
+try:
+    import paramiko  # For SFTP
+except ImportError:
+    paramiko = None
+try:
+    import smbclient  # For SMB
+except ImportError:
+    smbclient = None
+try:
+    import libtorrent as lt
+    HAS_TORRENT = True
+except ImportError:
+    lt = None
+    HAS_TORRENT = False
+from virus_check_utils import scan_if_unsigned
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from tqdm import tqdm
+from disk_writer import DiskWriter
+
 # --- DownloadManager class definition ---
+
+
+# --- DownloadManager Takeover Server ---
+TAKEOVER_PORT = 54323
+# Set this token securely in your environment for production use!
+TAKEOVER_TOKEN = os.environ.get('THROTTLE_IPC_TOKEN', 'super-secure-random-token-2025')
+
+# Track active downloads by dest path
+active_downloads = {}
+
+def handle_takeover(conn):
+    try:
+        data = conn.recv(4096)
+        req = json.loads(data.decode())
+        if req.get('token') != TAKEOVER_TOKEN:
+            conn.sendall(b'{"status":"error","msg":"auth failed"}')
+            return
+        url = req.get('url')
+        file_path = req.get('file_path')
+        pid = req.get('pid')
+        # Kill the original process if a valid PID is provided
+        if pid is not None:
+            try:
+                import psutil
+                p = psutil.Process(int(pid))
+                p.terminate()
+                try:
+                    p.wait(timeout=5)
+                except Exception:
+                    p.kill()
+                msg = f"Killed process {pid} before takeover."
+                print(f"[Takeover] {msg}")
+            except Exception as e:
+                print(f"[Takeover] Failed to kill process {pid}: {e}")
+
+        # If url is available, check if a download is already in progress for this dest
+        if url:
+            dest = file_path or os.path.basename(url.split('?')[0])
+            # If already downloading this dest, update the process
+            mgr = active_downloads.get(dest)
+            if mgr:
+                # Update parameters if needed (e.g., url, virus_check, etc.)
+                print(f"[Takeover] Updating existing download for {dest}")
+                mgr.url = url
+                # Optionally update other parameters here
+                # You could also implement a method to update bandwidth, threads, etc.
+                conn.sendall(b'{"status":"ok","msg":"updated existing download"}')
+            else:
+                try:
+                    mgr = DownloadManager(url, dest)
+                    active_downloads[dest] = mgr
+                    mgr.download()
+                    del active_downloads[dest]
+                    conn.sendall(b'{"status":"ok","msg":"downloaded"}')
+                except Exception as e:
+                    if dest in active_downloads:
+                        del active_downloads[dest]
+                    conn.sendall(json.dumps({"status":"error","msg":str(e)}).encode())
+        elif file_path:
+            # Scan/move file, apply security checks
+            try:
+                scan_if_unsigned(file_path)
+                conn.sendall(b'{"status":"ok","msg":"scanned"}')
+            except Exception as e:
+                conn.sendall(json.dumps({"status":"error","msg":str(e)}).encode())
+        else:
+            conn.sendall(b'{"status":"error","msg":"no url or file_path"}')
+    except Exception as e:
+        try:
+            conn.sendall(json.dumps({"status":"error","msg":str(e)}).encode())
+        except Exception:
+            pass
+    finally:
+        conn.close()
+
+def start_takeover_server():
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    s.bind(('127.0.0.1', TAKEOVER_PORT))
+    s.listen(5)
+    print(f"[DownloadManager] Takeover server listening on {TAKEOVER_PORT}")
+    while True:
+        conn, _ = s.accept()
+        threading.Thread(target=handle_takeover, args=(conn,), daemon=True).start()
 
 class DownloadManager:
     def _auto_tune(self, total_size):
@@ -367,3 +481,14 @@ CHUNK_SIZE = 1024 * 1024  # 1MB default chunk size
 IPC_HOST = '127.0.0.1'
 IPC_PORT = 5000
 IPC_AUTH_TOKEN = 'changeme'
+
+# --- Main entrypoint: start takeover server if run as main ---
+if __name__ == "__main__":
+    threading.Thread(target=start_takeover_server, daemon=True).start()
+    # Optionally, you can add CLI/interactive logic here, or just keep the server running
+    print("[DownloadManager] Ready for takeover requests.")
+    try:
+        while True:
+            time.sleep(60)
+    except KeyboardInterrupt:
+        print("[DownloadManager] Shutting down.")
