@@ -5,6 +5,10 @@ import threading
 import os
 import sys
 import logging
+import servicemanager
+import win32serviceutil
+import win32service
+import win32event
 from throttle_utils import ThrottleUtils
 
 # List of known large downloaders (add more as needed)
@@ -281,13 +285,48 @@ class ThrottleService:
             if not self.running:
                 break
 
+
+# --- Windows Service Wrapper ---
+class ThrottleServiceWin32(win32serviceutil.ServiceFramework):
+    _svc_name_ = "ThrottleService"
+    _svc_display_name_ = "Throttle Service"
+    _svc_description_ = "System-wide bandwidth throttling and enforcement."
+
+    def __init__(self, args):
+        win32serviceutil.ServiceFramework.__init__(self, args)
+        self.hWaitStop = win32event.CreateEvent(None, 0, 0, None)
+        self.svc = ThrottleService()
+        self.thread = None
+
+    def SvcStop(self):
+        self.ReportServiceStatus(win32service.SERVICE_STOP_PENDING)
+        self.svc.running = False
+        win32event.SetEvent(self.hWaitStop)
+
+    def SvcDoRun(self):
+        servicemanager.LogInfoMsg("ThrottleService is starting.")
+        self.thread = threading.Thread(target=self.svc.start, daemon=True)
+        self.thread.start()
+        # Wait for stop event
+        win32event.WaitForSingleObject(self.hWaitStop, win32event.INFINITE)
+        servicemanager.LogInfoMsg("ThrottleService is stopping.")
+
+def main():
+    import sys
+    if len(sys.argv) == 1:
+        # Run as service
+        win32serviceutil.HandleCommandLine(ThrottleServiceWin32)
+    else:
+        # Allow running as a console app for debugging
+        service = ThrottleService()
+        try:
+            service.start()
+        except KeyboardInterrupt:
+            service.running = False
+            print("ThrottleService stopped.")
+        except Exception as e:
+            service.logger.critical(f"Fatal error in main: {e}")
+            sys.exit(1)
+
 if __name__ == "__main__":
-    service = ThrottleService()
-    try:
-        service.start()
-    except KeyboardInterrupt:
-        service.running = False
-        print("ThrottleService stopped.")
-    except Exception as e:
-        service.logger.critical(f"Fatal error in main: {e}")
-        sys.exit(1)
+    main()

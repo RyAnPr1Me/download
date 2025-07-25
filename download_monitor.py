@@ -83,66 +83,6 @@ class DownloadEventHandler(FileSystemEventHandler):
                 self.monitor.logger.error(f"Failed to send takeover request for {fpath}: {e}")
         except Exception as e:
             self.monitor.logger.error(f"Error handling event for {fpath}: {e}")
-                self.monitor.logger.debug(f"Skipped (unlikely type): {fpath} mime={mime}")
-                return
-            signed = is_signed(fpath)
-            # Try to get download URL from .meta file or ADS
-            url = None
-            meta_path = fpath + '.meta'
-            if os.path.exists(meta_path):
-                try:
-                    with open(meta_path, 'r', encoding='utf-8') as mf:
-                        meta = json.load(mf)
-                        url = meta.get('url', None)
-                except Exception:
-                    pass
-            if not url and os.name == 'nt':
-                try:
-                    ads_path = fpath + ':Zone.Identifier'
-                    if os.path.exists(ads_path):
-                        with open(ads_path, 'r', encoding='utf-8', errors='ignore') as ads:
-                            for line in ads:
-                                if line.strip().startswith('HostUrl='):
-                                    url = line.strip().split('=', 1)[-1]
-                                    break
-                except Exception:
-                    pass
-            src = self.monitor.identify_source(fpath)
-            # Calculate hash for integrity (SHA256, best effort)
-            file_hash = None
-            try:
-                hasher = hashlib.sha256()
-                with open(fpath, 'rb') as f:
-                    for chunk in iter(lambda: f.read(1024*1024), b''):
-                        hasher.update(chunk)
-                file_hash = hasher.hexdigest()
-            except Exception:
-                pass
-            info = {
-                'path': fpath,
-                'size': size,
-                'signed': signed,
-                'source': src,
-                'url': url,
-                'mime': mime,
-                'hash': file_hash,
-                'event_type': event.event_type,
-                'ctime': os.path.getctime(fpath),
-                'mtime': os.path.getmtime(fpath)
-            }
-            self.monitor.logger.info(f"Download detected: {info}")
-            # Feed all detected downloads with a URL or .torrent/magnet into DownloadManager
-            self.monitor.report_download(info)
-            # If a valid download source is detected, invoke DownloadManager
-            if url or (fpath.lower().endswith('.torrent') or (url and url.startswith('magnet:'))):
-                import subprocess
-                import sys
-                # For .torrent files, pass the file path as the URL
-                download_url = url if url else fpath
-                self.monitor.logger.info(f"Feeding DownloadManager: {download_url} -> {fpath}")
-                subprocess.Popen([sys.executable, 'download_manager.py', download_url, fpath])
-        except Exception as e:
-            self.monitor.logger.error(f"Error in _handle_event for {fpath}: {e}")
 
 class DownloadMonitor:
     def __init__(self):

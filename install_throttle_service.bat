@@ -1,3 +1,5 @@
+REM Main installer script for ThrottleService and related services
+
 REM Check for admin rights
 openfiles >nul 2>&1
 if %errorlevel% NEQ 0 (
@@ -52,7 +54,7 @@ if "%THROTTLE_IPC_TOKEN%"=="" (
     exit /b 1
 )
 
-REM Install Python dependencies
+REM Install Python dependencies if requirements.txt exists
 if exist requirements.txt (
     echo Installing Python dependencies...
     python -m pip install --upgrade pip
@@ -60,7 +62,7 @@ if exist requirements.txt (
 )
 
 
-REM --- Install or Update ThrottleService ---
+REM --- Install or Update ThrottleService as a true Windows service ---
 set SERVICE_NAME=ThrottleService
 set SCRIPT_PATH=%~dp0throttle_service.py
 nssm status %SERVICE_NAME% >nul 2>nul
@@ -68,14 +70,13 @@ if not %errorlevel%==3 (
     echo Stopping %SERVICE_NAME% for update...
     nssm stop %SERVICE_NAME% >> "%LOGFILE%" 2>&1
 )
-
 if %errorlevel%==3 (
-    echo Installing %SERVICE_NAME%...
-    nssm install %SERVICE_NAME% "%PYTHON_EXE%" "%SCRIPT_PATH%" >> "%LOGFILE%" 2>&1
+    echo Installing %SERVICE_NAME% as a Windows service...
+    nssm install %SERVICE_NAME% "%PYTHON_EXE%" "%SCRIPT_PATH%" run >> "%LOGFILE%" 2>&1
 ) else (
     echo Updating %SERVICE_NAME%...
     nssm set %SERVICE_NAME% Application "%PYTHON_EXE%" >> "%LOGFILE%" 2>&1
-    nssm set %SERVICE_NAME% AppParameters "%SCRIPT_PATH%" >> "%LOGFILE%" 2>&1
+    nssm set %SERVICE_NAME% AppParameters "%SCRIPT_PATH% run" >> "%LOGFILE%" 2>&1
 )
 REM Ensure service is set to auto start on boot
 nssm set %SERVICE_NAME% Start SERVICE_AUTO_START >> "%LOGFILE%" 2>&1
@@ -84,7 +85,7 @@ nssm set %SERVICE_NAME% AppEnvironmentExtra THROTTLE_IPC_TOKEN=%THROTTLE_IPC_TOK
 echo Starting %SERVICE_NAME%...
 nssm start %SERVICE_NAME% >> "%LOGFILE%" 2>&1
 
-REM --- Install or Update DownloadMonitor ---
+REM --- Install or Update DownloadMonitor as a true Windows service ---
 set SERVICE_NAME=DownloadMonitor
 set SCRIPT_PATH=%~dp0download_monitor.py
 nssm status %SERVICE_NAME% >nul 2>nul
@@ -93,12 +94,12 @@ if not %errorlevel%==3 (
     nssm stop %SERVICE_NAME% >> "%LOGFILE%" 2>&1
 )
 if %errorlevel%==3 (
-    echo Installing %SERVICE_NAME%...
-    nssm install %SERVICE_NAME% "%PYTHON_EXE%" "%SCRIPT_PATH%" >> "%LOGFILE%" 2>&1
+    echo Installing %SERVICE_NAME% as a Windows service...
+    nssm install %SERVICE_NAME% "%PYTHON_EXE%" "%SCRIPT_PATH% run" >> "%LOGFILE%" 2>&1
 ) else (
     echo Updating %SERVICE_NAME%...
     nssm set %SERVICE_NAME% Application "%PYTHON_EXE%" >> "%LOGFILE%" 2>&1
-    nssm set %SERVICE_NAME% AppParameters "%SCRIPT_PATH%" >> "%LOGFILE%" 2>&1
+    nssm set %SERVICE_NAME% AppParameters "%SCRIPT_PATH% run" >> "%LOGFILE%" 2>&1
 )
 nssm set %SERVICE_NAME% Start SERVICE_AUTO_START >> "%LOGFILE%" 2>&1
 nssm set %SERVICE_NAME% ObjectName LocalSystem >> "%LOGFILE%" 2>&1
@@ -106,7 +107,7 @@ nssm set %SERVICE_NAME% AppEnvironmentExtra THROTTLE_IPC_TOKEN=%THROTTLE_IPC_TOK
 echo Starting %SERVICE_NAME%...
 nssm start %SERVICE_NAME% >> "%LOGFILE%" 2>&1
 
-REM --- Install or Update ThrottleSupervisor ---
+REM --- Install or Update ThrottleSupervisor as a true Windows service ---
 set SERVICE_NAME=ThrottleSupervisor
 set SCRIPT_PATH=%~dp0supervisor.py
 nssm status %SERVICE_NAME% >nul 2>nul
@@ -115,12 +116,12 @@ if not %errorlevel%==3 (
     nssm stop %SERVICE_NAME% >> "%LOGFILE%" 2>&1
 )
 if %errorlevel%==3 (
-    echo Installing %SERVICE_NAME%...
-    nssm install %SERVICE_NAME% "%PYTHON_EXE%" "%SCRIPT_PATH%" >> "%LOGFILE%" 2>&1
+    echo Installing %SERVICE_NAME% as a Windows service...
+    nssm install %SERVICE_NAME% "%PYTHON_EXE%" "%SCRIPT_PATH% run" >> "%LOGFILE%" 2>&1
 ) else (
     echo Updating %SERVICE_NAME%...
     nssm set %SERVICE_NAME% Application "%PYTHON_EXE%" >> "%LOGFILE%" 2>&1
-    nssm set %SERVICE_NAME% AppParameters "%SCRIPT_PATH%" >> "%LOGFILE%" 2>&1
+    nssm set %SERVICE_NAME% AppParameters "%SCRIPT_PATH% run" >> "%LOGFILE%" 2>&1
 )
 nssm set %SERVICE_NAME% Start SERVICE_AUTO_START >> "%LOGFILE%" 2>&1
 nssm set %SERVICE_NAME% ObjectName LocalSystem >> "%LOGFILE%" 2>&1
@@ -128,7 +129,7 @@ nssm set %SERVICE_NAME% AppEnvironmentExtra THROTTLE_IPC_TOKEN=%THROTTLE_IPC_TOK
 echo Starting %SERVICE_NAME%...
 nssm start %SERVICE_NAME% >> "%LOGFILE%" 2>&1
 
-REM --- Install or Update DownloadManager ---
+REM --- Install or Update DownloadManager as a true Windows service ---
 set SERVICE_NAME=DownloadManager
 set SCRIPT_PATH=%~dp0download_manager.py
 nssm status %SERVICE_NAME% >nul 2>nul
@@ -137,12 +138,12 @@ if not %errorlevel%==3 (
     nssm stop %SERVICE_NAME% >> "%LOGFILE%" 2>&1
 )
 if %errorlevel%==3 (
-    echo Installing %SERVICE_NAME%...
-    nssm install %SERVICE_NAME% "%PYTHON_EXE%" "%SCRIPT_PATH%" >> "%LOGFILE%" 2>&1
+    echo Installing %SERVICE_NAME% as a Windows service...
+    nssm install %SERVICE_NAME% "%PYTHON_EXE%" "%SCRIPT_PATH% run" >> "%LOGFILE%" 2>&1
 ) else (
     echo Updating %SERVICE_NAME%...
     nssm set %SERVICE_NAME% Application "%PYTHON_EXE%" >> "%LOGFILE%" 2>&1
-    nssm set %SERVICE_NAME% AppParameters "%SCRIPT_PATH%" >> "%LOGFILE%" 2>&1
+    nssm set %SERVICE_NAME% AppParameters "%SCRIPT_PATH% run" >> "%LOGFILE%" 2>&1
 )
 nssm set %SERVICE_NAME% Start SERVICE_AUTO_START >> "%LOGFILE%" 2>&1
 nssm set %SERVICE_NAME% ObjectName LocalSystem >> "%LOGFILE%" 2>&1
@@ -150,7 +151,7 @@ nssm set %SERVICE_NAME% AppEnvironmentExtra THROTTLE_IPC_TOKEN=%THROTTLE_IPC_TOK
 echo Starting %SERVICE_NAME%...
 nssm start %SERVICE_NAME% >> "%LOGFILE%" 2>&1
 
-REM --- Install or Update Watchdog ---
+REM --- Install or Update Watchdog as a true Windows service ---
 set SERVICE_NAME=Watchdog
 set SCRIPT_PATH=%~dp0watchdog.py
 nssm status %SERVICE_NAME% >nul 2>nul
@@ -159,12 +160,12 @@ if not %errorlevel%==3 (
     nssm stop %SERVICE_NAME% >> "%LOGFILE%" 2>&1
 )
 if %errorlevel%==3 (
-    echo Installing %SERVICE_NAME%...
-    nssm install %SERVICE_NAME% "%PYTHON_EXE%" "%SCRIPT_PATH%" >> "%LOGFILE%" 2>&1
+    echo Installing %SERVICE_NAME% as a Windows service...
+    nssm install %SERVICE_NAME% "%PYTHON_EXE%" "%SCRIPT_PATH% run" >> "%LOGFILE%" 2>&1
 ) else (
     echo Updating %SERVICE_NAME%...
     nssm set %SERVICE_NAME% Application "%PYTHON_EXE%" >> "%LOGFILE%" 2>&1
-    nssm set %SERVICE_NAME% AppParameters "%SCRIPT_PATH%" >> "%LOGFILE%" 2>&1
+    nssm set %SERVICE_NAME% AppParameters "%SCRIPT_PATH% run" >> "%LOGFILE%" 2>&1
 )
 nssm set %SERVICE_NAME% Start SERVICE_AUTO_START >> "%LOGFILE%" 2>&1
 nssm set %SERVICE_NAME% ObjectName LocalSystem >> "%LOGFILE%" 2>&1
@@ -219,4 +220,5 @@ set SHORTCUT_NAME=Conductor.lnk
 set DESKTOP=%USERPROFILE%\Desktop
 if exist "%DESKTOP%\%SHORTCUT_NAME%" del "%DESKTOP%\%SHORTCUT_NAME%"
 echo Uninstall complete. Services removed and shortcut deleted.
+exit /b 0
 exit /b 0

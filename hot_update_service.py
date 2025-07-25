@@ -85,8 +85,45 @@ def main():
     for t in threads:
         t.join()
 
-if __name__ == "__main__":
-    main()
+# --- Windows Service Wrapper ---
+try:
+    import win32serviceutil
+    import win32service
+    import win32event
+    import servicemanager
+
+    class HotUpdateService(win32serviceutil.ServiceFramework):
+        _svc_name_ = "HotUpdateService"
+        _svc_display_name_ = "Hot Update Service"
+        _svc_description_ = "Hot update and restart Windows services when code changes."
+
+        def __init__(self, args):
+            win32serviceutil.ServiceFramework.__init__(self, args)
+            self.hWaitStop = win32event.CreateEvent(None, 0, 0, None)
+            self.thread = None
+
+        def SvcStop(self):
+            self.ReportServiceStatus(win32service.SERVICE_STOP_PENDING)
+            # Terminate the process to stop all threads
+            os._exit(0)
+            win32event.SetEvent(self.hWaitStop)
+
+        def SvcDoRun(self):
+            servicemanager.LogInfoMsg("HotUpdateService is starting.")
+            import sys
+            # Run main() with default config (or customize as needed)
+            self.thread = threading.Thread(target=main, daemon=True)
+            self.thread.start()
+            win32event.WaitForSingleObject(self.hWaitStop, win32event.INFINITE)
+            servicemanager.LogInfoMsg("HotUpdateService is stopping.")
+
+except ImportError:
+    HotUpdateService = None
 
 if __name__ == "__main__":
-    main()
+    import sys
+    if 'win32serviceutil' in sys.modules and len(sys.argv) == 1:
+        # Run as service
+        win32serviceutil.HandleCommandLine(HotUpdateService)
+    else:
+        main()
